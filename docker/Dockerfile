@@ -1,0 +1,35 @@
+FROM ubuntu:jammy-20220531 AS build
+
+RUN apt update && \
+    apt install wget -y && \
+    apt install build-essential -y && \
+    apt install curl -y && \
+    apt install ca-certificates -y && \
+    apt clean && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN update-ca-certificates
+
+RUN wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+RUN dpkg -i libssl1.1_1.1.1f-1ubuntu2_amd64.deb
+
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
+
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+COPY . /bright_dispute/
+
+RUN rustup target add x86_64-unknown-linux-gnu wasm32-unknown-unknown
+RUN rustup install nightly nightly-2022-11-28
+RUN rustup default nightly-2022-11-28
+RUN rustup component add rust-src --toolchain nightly-x86_64-unknown-linux-gnu
+RUN cargo install --force --locked cargo-contract --version 2.0.0
+
+WORKDIR /bright_dispute/contract
+RUN cargo +nightly contract build --release 
+
+FROM scratch AS export-stage
+COPY --from=build /bright_dispute/contract/target/ink/bright_disputes.json .
+COPY --from=build /bright_dispute/contract/target/ink/bright_disputes.wasm .
+COPY --from=build /bright_dispute/contract/target/ink/bright_disputes.contract .
+

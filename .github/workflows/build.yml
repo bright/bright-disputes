@@ -1,0 +1,30 @@
+name: Rust
+
+on:
+  push:
+    branches: [ "master" ]
+  pull_request:
+    branches: [ "master" ]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - name: Install nightly
+        uses: actions-rs/toolchain@v1
+        with:
+            toolchain: nightly
+            override: true
+      - name: Update Rust environment
+        run: rustup component add rust-src
+      - name: Adding WebAssembly target
+        run: rustup target add wasm32-unknown-unknown --toolchain nightly
+      - name: Build bounties
+        run: cd contract && cargo +nightly build --release --verbose
+      - name: Run bounties unit tests
+        run: cd contract && cargo +nightly test --release --verbose

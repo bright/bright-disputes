@@ -1,0 +1,29 @@
+[package]
+name = "bright_disputes"
+version = "0.1.0"
+authors = ["Michal Gralinski michal.gralinski@brightinventions.pl"]
+edition = "2021"
+license = "MIT"
+publish = false
+
+[lib]
+path = "src/lib.rs"
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+scale = { package = "parity-scale-codec", version = "3", default-features = false, features = ["derive"] }
+scale-info = { version = "2.3", default-features = false, features = ["derive"], optional = true }
+
+ink = { version = "4.0.1",  default-features = false }
+
+baby-liminal-extension = { git = "https://github.com/Cardinal-Cryptography/aleph-node", default-features = false, features = ["ink", "ink-as-dependency"] }
+
+[features]
+default = ["std"]
+std = [
+    "scale/std",
+    "scale-info/std",
+    "ink/std",
+    "baby-liminal-extension/ink-std",
+]
+ink-as-dependency = []
