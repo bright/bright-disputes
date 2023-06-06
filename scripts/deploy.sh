@@ -7,6 +7,7 @@ set -euo pipefail
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 
 export NODE_IMAGE="public.ecr.aws/p6e8q1z1/aleph-node-liminal:d93048e"
+export CLIAIN_IMAGE="public.ecr.aws/p6e8q1z1/cliain-liminal:d93048e"
 export INK_DEV_IMAGE="public.ecr.aws/p6e8q1z1/ink-dev:1.1.0"
 
 # actors
@@ -14,8 +15,13 @@ DAMIAN=//0
 DAMIAN_PUBKEY=5D34dL5prEUaGNQtPPZ3yN5Y6BnkfXunKXXz6fo7ZJbLwRRH
 HANS=//1
 HANS_PUBKEY=5GBNeWRhZc2jXu7D55rBimKYDk8PGk8itRYFTPfC8RJLKG5o
+MICHAL=//2
+MICHAL_PUBKEY=5H8rhTXiLiXAe9yhnnQrCuz6bvbwrcTddMJa9KfsX9mi26sj
 ADMIN=//Alice
 ADMIN_PUBKEY=5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY
+
+# tokenomics
+TOKEN_PER_PERSON=1000
 
 # env
 NODE="ws://127.0.0.1:9944"
@@ -112,7 +118,7 @@ contract_instantiate() {
 
 deploy_contract() {
     cd "${SCRIPT_DIR}"/..
-    CONTRACT_ADDRESS=$(contract_instantiate "--args true --manifest-path contract/Cargo.toml" | jq -r '.contract')
+    CONTRACT_ADDRESS=$(contract_instantiate "--manifest-path contract/Cargo.toml" | jq -r '.contract')
     export CONTRACT_ADDRESS
     log_progress "Contract address: ${CONTRACT_ADDRESS}"
 }
@@ -126,6 +132,21 @@ store_contract_addres() {
     log_progress "✅ Contract addresses stored in a ${SCRIPT_DIR}/addresses.json"
 }
 
+transfer() {
+  $DOCKER_SH \
+    --network host \
+    ${CLIAIN_IMAGE} \
+    -c "/usr/local/bin/cliain --node ${NODE} --seed ${ADMIN} transfer --amount-in-tokens ${TOKEN_PER_PERSON} --to-account ${1}" 1>/dev/null
+
+  log_progress "✅ Transferred ${TOKEN_PER_PERSON} to ${1}"
+}
+
+prefund_users() {
+  for recipient in "${DAMIAN_PUBKEY}" "${HANS_PUBKEY}" "${MICHAL_PUBKEY}"; do
+    transfer ${recipient}
+  done
+}
+
 # ------------------------------------------------------------------------------------------------------
 
 deploy() {
@@ -136,6 +157,9 @@ deploy() {
     generate_chainspec
     export_bootnode_address
     run_snarkeling_node
+
+    # prefund users
+    prefund_users
 
     # build contracts
     build
