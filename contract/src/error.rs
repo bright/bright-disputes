@@ -4,7 +4,6 @@ use scale::{Decode, Encode};
 #[derive(Eq, PartialEq, Debug, Decode, Encode)]
 #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
 pub enum BrightDisputesError {
-    DisputeAlreadyCreated,
     DisputeNotExist,
     NotAuthorized,
     InvalidState,

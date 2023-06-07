@@ -1,7 +1,10 @@
 #[ink::contract(env = baby_liminal_extension::ink::BabyLiminalEnvironment)]
 mod bright_disputes {
 
-    use ink::prelude::string::String;
+    use ink::{
+        prelude::{string::String, vec::Vec},
+        storage::Mapping,
+    };
 
     use crate::{
         dispute::Dispute,
@@ -17,6 +20,11 @@ mod bright_disputes {
     }
 
     #[ink(event)]
+    pub struct DisputeClosed {
+        id: DisputeId,
+    }
+
+    #[ink(event)]
     pub struct DefendantConfirmDispute {
         id: DisputeId,
         defendant_id: AccountId,
@@ -26,7 +34,7 @@ mod bright_disputes {
     #[ink(storage)]
     pub struct BrightDisputes {
         last_dispute_id: DisputeId,
-        dispute: Option<Dispute>,
+        disputes: Mapping<DisputeId, Dispute>,
     }
 
     impl BrightDisputes {
@@ -35,7 +43,7 @@ mod bright_disputes {
         pub fn new() -> Self {
             Self {
                 last_dispute_id: 0,
-                dispute: None,
+                disputes: Mapping::default(),
             }
         }
 
@@ -46,24 +54,42 @@ mod bright_disputes {
             owner_link: String,
             defendant_id: AccountId,
             escrow: Balance,
-        ) -> Result<()> {
-            if self.dispute.is_some() {
-                return Err(BrightDisputesError::DisputeAlreadyCreated);
-            }
+        ) -> Result<DisputeId> {
             let owner_id = ink::env::caller::<ink::env::DefaultEnvironment>();
             self.last_dispute_id = self.generate_dispute_id()?;
-            self.dispute = Some(Dispute::create(
-                self.last_dispute_id,
-                owner_link,
-                defendant_id,
-                escrow,
-            ));
+            let dispute = Dispute::create(self.last_dispute_id, owner_link, defendant_id, escrow);
+            self.update_dispute(dispute);
 
             self.env().emit_event(DisputeRaised {
                 id: self.last_dispute_id,
                 owner_id,
                 defendant_id,
             });
+
+            Ok(self.last_dispute_id)
+        }
+
+        /// Get single dispute by id
+        #[ink(message)]
+        pub fn get_dispute(&self, dispute_id: DisputeId) -> Result<Dispute> {
+            self.get_dispute_or_assert(dispute_id)
+        }
+
+        /// Get all disputes
+        #[ink(message)]
+        pub fn get_all_disputes(&self) -> Vec<Dispute> {
+            (1..=self.last_dispute_id)
+                .flat_map(|id| self.disputes.get(id))
+                .collect()
+        }
+
+        /// Get single dispute by id
+        #[ink(message)]
+        pub fn remove_dispute(&mut self, dispute_id: DisputeId) -> Result<()> {
+            self.get_dispute_or_assert(dispute_id)?;
+            self.disputes.remove(dispute_id);
+
+            self.env().emit_event(DisputeClosed { id: dispute_id });
 
             Ok(())
         }
@@ -77,14 +103,14 @@ mod bright_disputes {
             escrow: Balance,
         ) -> Result<()> {
             let mut dispute = self.get_dispute_or_assert(dispute_id)?;
+            let id = dispute.id();
             dispute.confirm_defendant(defendant_link, escrow)?;
+            self.update_dispute(dispute);
 
             self.env().emit_event(DefendantConfirmDispute {
-                id: dispute.id(),
+                id,
                 defendant_id: ink::env::caller::<ink::env::DefaultEnvironment>(),
             });
-
-            self.dispute = Some(dispute);
 
             Ok(())
         }
@@ -98,6 +124,7 @@ mod bright_disputes {
         ) -> Result<()> {
             let mut dispute = self.get_dispute_or_assert(dispute_id)?;
             dispute.set_owner_link(owner_link)?;
+            self.update_dispute(dispute);
             Ok(())
         }
 
@@ -110,7 +137,12 @@ mod bright_disputes {
         ) -> Result<()> {
             let mut dispute = self.get_dispute_or_assert(dispute_id)?;
             dispute.set_defendant_link(defendant_link)?;
+            self.update_dispute(dispute);
             Ok(())
+        }
+
+        fn update_dispute(&mut self, dispute: Dispute) {
+            self.disputes.insert(dispute.id(), &dispute);
         }
 
         fn generate_dispute_id(&self) -> Result<DisputeId> {
@@ -122,12 +154,9 @@ mod bright_disputes {
         }
 
         fn get_dispute_or_assert(&self, dispute_id: DisputeId) -> Result<Dispute> {
-            if let Some(d) = &self.dispute {
-                if d.id() == dispute_id {
-                    return Ok(d.clone());
-                }
-            }
-            return Err(BrightDisputesError::DisputeNotExist);
+            self.disputes
+                .get(dispute_id)
+                .ok_or(BrightDisputesError::DisputeNotExist)
         }
     }
 
@@ -137,11 +166,10 @@ mod bright_disputes {
 
         use super::*;
 
-        /// We test if we can create only one single dispute.
+        /// Test if we can create only one single dispute.
         #[ink::test]
         fn create_single_dispute() {
             let mut bright_disputes = BrightDisputes::new();
-            assert_eq!(bright_disputes.dispute, None);
 
             let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
             let owner_link = "https://brightinventions.pl/";
@@ -149,11 +177,94 @@ mod bright_disputes {
             set_caller::<DefaultEnvironment>(accounts.alice);
             let result =
                 bright_disputes.create_dispute(owner_link.into(), accounts.bob, escrow_amount);
-            assert_eq!(result, Ok(()));
+            assert_eq!(result, Ok(1));
+        }
 
-            let result =
-                bright_disputes.create_dispute(owner_link.into(), accounts.bob, escrow_amount);
-            assert_eq!(result, Err(BrightDisputesError::DisputeAlreadyCreated));
+        /// Test if we can create multiple disputes.
+        #[ink::test]
+        fn create_multiple_dispute() {
+            let mut bright_disputes = BrightDisputes::new();
+
+            let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
+            set_caller::<DefaultEnvironment>(accounts.alice);
+
+            // Alice creates first dispute
+            let result = bright_disputes.create_dispute(
+                "https://brightinventions.pl/".into(),
+                accounts.bob,
+                10,
+            );
+            assert_eq!(result, Ok(1));
+
+            // Alice creates second dispute
+            let result = bright_disputes.create_dispute(
+                "https://brightinventions.pl/".into(),
+                accounts.bob,
+                10,
+            );
+            assert_eq!(result, Ok(2));
+        }
+
+        /// Test if we can get single disputes.
+        #[ink::test]
+        fn get_single_dispute() {
+            let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
+            let mut bright_disputes = BrightDisputes::new();
+
+            let result = bright_disputes.get_dispute(1);
+            assert_eq!(result, Err(BrightDisputesError::DisputeNotExist));
+
+            bright_disputes
+                .create_dispute("https://brightinventions.pl/1".into(), accounts.bob, 10)
+                .expect("Failed to create a dispute!");
+
+            let bob_dispute = bright_disputes.get_dispute(1);
+            assert!(bob_dispute.is_ok());
+            assert_eq!(bob_dispute.unwrap().id(), 1);
+        }
+
+        /// Test if we can get multiple disputes.
+        #[ink::test]
+        fn get_all_dispute() {
+            let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
+            let mut bright_disputes = BrightDisputes::new();
+
+            bright_disputes
+                .create_dispute("https://brightinventions.pl/1".into(), accounts.bob, 10)
+                .expect("Failed to create a dispute!");
+
+            bright_disputes
+                .create_dispute("https://brightinventions.pl/2".into(), accounts.alice, 10)
+                .expect("Failed to create a dispute!");
+
+            let bob_dispute = bright_disputes.get_dispute(1);
+            assert!(bob_dispute.is_ok());
+
+            let alice_dispute = bright_disputes.get_dispute(2);
+            assert!(alice_dispute.is_ok());
+
+            let all_disputes = bright_disputes.get_all_disputes();
+            assert_eq!(
+                all_disputes,
+                vec![bob_dispute.unwrap(), alice_dispute.unwrap()]
+            );
+        }
+
+        /// Test if we can remove a single dispute.
+        #[ink::test]
+        fn remove_dispute() {
+            let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
+            let mut bright_disputes = BrightDisputes::new();
+
+            let result = bright_disputes.remove_dispute(1);
+            assert_eq!(result, Err(BrightDisputesError::DisputeNotExist));
+
+            bright_disputes
+                .create_dispute("https://brightinventions.pl".into(), accounts.bob, 10)
+                .expect("Failed to create a dispute!");
+
+            let result = bright_disputes.remove_dispute(1);
+            assert_eq!(result, Ok(()));
         }
 
         /// Test confirmation of the defendant

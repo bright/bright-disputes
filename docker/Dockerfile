@@ -20,13 +20,13 @@ ENV PATH="/root/.cargo/bin:${PATH}"
 COPY . /bright_dispute/
 
 RUN rustup target add x86_64-unknown-linux-gnu wasm32-unknown-unknown
-RUN rustup install nightly nightly-2022-11-28
+RUN rustup install nightly-2022-11-28
 RUN rustup default nightly-2022-11-28
-RUN rustup component add rust-src --toolchain nightly-x86_64-unknown-linux-gnu
+RUN rustup component add rust-src --toolchain nightly-2022-11-28-x86_64-unknown-linux-gnu
 RUN cargo install --force --locked cargo-contract --version 2.0.0
 
 WORKDIR /bright_dispute/contract
-RUN cargo +nightly contract build --release 
+RUN cargo +nightly-2022-11-28 contract build --release 
 
 FROM scratch AS export-stage
 COPY --from=build /bright_dispute/contract/target/ink/bright_disputes.json .
