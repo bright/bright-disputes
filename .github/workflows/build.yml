@@ -2,9 +2,9 @@ name: Rust
 
 on:
   push:
-    branches: [ "master" ]
+    branches: [ "main" ]
   pull_request:
-    branches: [ "master" ]
+    branches: [ "main" ]
 
 env:
   CARGO_TERM_COLOR: always
@@ -24,7 +24,7 @@ jobs:
         run: rustup component add rust-src
       - name: Adding WebAssembly target
         run: rustup target add wasm32-unknown-unknown --toolchain nightly
-      - name: Build bounties
+      - name: Build bright disputes
         run: cd contract && cargo +nightly build --release --verbose
-      - name: Run bounties unit tests
+      - name: Run bright disputes unit tests
         run: cd contract && cargo +nightly test --release --verbose
