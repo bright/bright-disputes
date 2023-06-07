@@ -7,7 +7,7 @@ This project
 ## Build
 To build smart contract run:
 ```
-cargo +nightly contract build --release --manifest-path contract/Cargo.toml
+cargo +nightly-2022-11-28 contract build --release --manifest-path contract/Cargo.toml
 ```
 
 ## Run
@@ -29,7 +29,7 @@ This will export *bright_disputes.json*, *bright_disputes.wasm*, *bright_dispute
 ## Tests
 To run a unit test:
 ```
-cargo +nightly test --release --manifest-path contract/Cargo.toml
+cargo +nightly-2022-11-28 test --release --manifest-path contract/Cargo.toml
 ```
 or with docker:
 ```
