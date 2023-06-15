@@ -16,8 +16,11 @@ use crate::{
     derive(ink::storage::traits::StorageLayout, scale_info::TypeInfo)
 )]
 pub enum State {
-    CREATED,
-    CONFIRMED,
+    Created,
+    Confirmed,
+    CollectingJuries,
+    PickingJudge,
+    Voting,
 }
 
 #[derive(Clone, Debug, PartialEq, scale::Decode, scale::Encode)]
@@ -35,8 +38,8 @@ pub struct Dispute {
     defendant: AccountId,
     defendant_link: Option<String>,
 
-    judge: Option<Jure>,
-    juries: Vec<Jure>,
+    judge: Option<AccountId>,
+    juries: Vec<AccountId>,
     votes: Vec<Vote>,
 }
 
@@ -50,7 +53,7 @@ impl Dispute {
     ) -> Self {
         Dispute {
             id,
-            state: State::CREATED,
+            state: State::Created,
             owner: ink::env::caller::<ink::env::DefaultEnvironment>(),
             owner_link,
             escrow,
@@ -63,12 +66,11 @@ impl Dispute {
     }
 
     /// Confirm defendant participation in dispute
-    pub fn confirm_defendant(&mut self, defendant_link: String, escrow: Balance) -> Result<()> {
+    pub fn confirm_defendant(&mut self, defendant_link: String) -> Result<()> {
         self.assert_defendant_call()?;
-        self.assert_state(State::CREATED)?;
+        self.assert_state(State::Created)?;
         self.defendant_link = Some(defendant_link);
-        self.escrow += escrow;
-        self.state = State::CONFIRMED;
+        self.state = State::Confirmed;
         Ok(())
     }
 
@@ -82,16 +84,36 @@ impl Dispute {
     }
 
     /// Add jure to the dispute
-    #[allow(dead_code)]
-    pub fn add_jure(&mut self, jure: Jure) -> Result<()> {
+    pub fn assign_jure(&mut self, jure: &mut Jure) -> Result<()> {
         self.assert_not_jure(jure.id())?;
-        self.juries.push(jure);
+        jure.assign_to_dispute(self.id)?;
+        self.juries.push(jure.id());
         Ok(())
     }
 
     /// Get dispute id
     pub fn id(&self) -> DisputeId {
         return self.id;
+    }
+
+    /// Get dispute id
+    pub fn owner(&self) -> AccountId {
+        return self.owner;
+    }
+
+    /// Get dispute id
+    pub fn defendant(&self) -> AccountId {
+        return self.defendant;
+    }
+
+    /// Get dispute escrow
+    pub fn escrow(&self) -> Balance {
+        return self.escrow;
+    }
+
+    /// Get juries
+    pub fn juries(&self) -> Vec<AccountId> {
+        return self.juries.clone();
     }
 
     /// Set owner decription link
@@ -131,7 +153,7 @@ impl Dispute {
 
     fn assert_jure(&self, jure: AccountId) -> Result<()> {
         for j in &self.juries {
-            if j.id() == jure {
+            if *j == jure {
                 return Ok(());
             }
         }
@@ -140,7 +162,7 @@ impl Dispute {
 
     fn assert_not_jure(&self, jure: AccountId) -> Result<()> {
         for j in &self.juries {
-            if j.id() == jure {
+            if *j == jure {
                 return Err(BrightDisputesError::JureAlreadyAdded);
             }
         }
@@ -182,7 +204,7 @@ mod tests {
         let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
 
         assert_eq!(dispute.id, 1);
-        assert_eq!(dispute.state, State::CREATED);
+        assert_eq!(dispute.state, State::Created);
         assert_eq!(dispute.owner, accounts.alice);
         assert_eq!(dispute.owner_link, "https://brightinventions.pl/owner");
         assert_eq!(dispute.escrow, 15);
@@ -198,10 +220,9 @@ mod tests {
         let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
         let mut dispute = default_test_dispute();
 
-        dispute
-            .add_jure(Jure::create(accounts.charlie))
-            .expect("Unable to add jure!");
-        
+        let mut jure = Jure::create(accounts.charlie);
+        dispute.assign_jure(&mut jure).expect("Unable to add jure!");
+
         // Only jure can vote
         let result = dispute.vote(Vote::create(accounts.bob, 1));
         assert_eq!(result, Err(BrightDisputesError::NotAuthorized));
@@ -215,20 +236,22 @@ mod tests {
         assert_eq!(result, Err(BrightDisputesError::JureAlreadyVoted));
     }
 
-
     #[ink::test]
-    fn add_jure() {
+    fn assign_jure() {
         let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
-        let jure = Jure::create(accounts.charlie);
         let mut dispute = default_test_dispute();
 
+        let mut jure = Jure::create(accounts.charlie);
+
         // Success
-        let result = dispute.add_jure(jure.clone());
+        let result = dispute.assign_jure(&mut jure);
         assert_eq!(result, Ok(()));
+        assert_eq!(jure.assigned_dispute(), Some(1));
 
         // Jure already added
-        let result = dispute.add_jure(jure.clone());
+        let result = dispute.assign_jure(&mut jure);
         assert_eq!(result, Err(BrightDisputesError::JureAlreadyAdded));
+        assert_eq!(jure.assigned_dispute(), Some(1));
     }
 
     #[ink::test]
@@ -239,18 +262,17 @@ mod tests {
 
         // Only defendant can confirm
         set_caller::<DefaultEnvironment>(accounts.alice);
-        let result = dispute.confirm_defendant(defendant_link.clone(), 10);
+        let result = dispute.confirm_defendant(defendant_link.clone());
         assert_eq!(result, Err(BrightDisputesError::NotAuthorized));
 
         // Success
         set_caller::<DefaultEnvironment>(accounts.bob);
-        let result = dispute.confirm_defendant(defendant_link.clone(), 10);
+        let result = dispute.confirm_defendant(defendant_link.clone());
         assert_eq!(result, Ok(()));
         assert_eq!(dispute.defendant_link, Some(defendant_link.clone()));
-        assert_eq!(dispute.escrow, 25);
 
         // Invalid state
-        let result = dispute.confirm_defendant(defendant_link, 10);
+        let result = dispute.confirm_defendant(defendant_link);
         assert_eq!(result, Err(BrightDisputesError::InvalidState));
     }
 
