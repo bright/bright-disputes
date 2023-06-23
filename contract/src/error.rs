@@ -1,4 +1,5 @@
 use baby_liminal_extension::BabyLiminalError;
+use ink::{prelude::vec::Vec, primitives::AccountId};
 use scale::{Decode, Encode};
 
 #[derive(Eq, PartialEq, Debug, Decode, Encode)]
@@ -6,7 +7,7 @@ use scale::{Decode, Encode};
 pub enum BrightDisputesError {
     DisputeNotExist,
     NotAuthorized,
-    InvalidState,
+    InvalidDisputeState,
     InvalidAction,
 
     JureAlreadyVoted,
@@ -14,8 +15,20 @@ pub enum BrightDisputesError {
     JureAlreadyRegistered,
     JureAlreadyAssignedToDispute,
     JureIsNotAssignedToDispute,
+    JureAlreadyConfirmedDispute,
+    JureInvalidState,
     JureNotExist,
     JuriesPoolIsToSmall,
+    JuriesNotVoted(Vec<AccountId>),
+    JudgeAlreadyAssignedToDispute,    
+
+    DisputeRoundDeadlineReached,
+    DisputeRoundLimitReached,
+    DisputeRoundNotStarted,
+    WrongDisputeRoundState,
+    CanNotSwitchDisputeRound,
+
+    MajorityOfVotesNotReached,
 
     NotRegisteredAsJure,
 

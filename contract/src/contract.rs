@@ -1,5 +1,5 @@
 #[ink::contract(env = baby_liminal_extension::ink::BabyLiminalEnvironment)]
-mod bright_disputes {
+pub mod bright_disputes {
 
     use ink::{
         prelude::{string::String, vec::Vec},
@@ -7,10 +7,12 @@ mod bright_disputes {
     };
 
     use crate::{
-        dispute::Dispute,
+        dispute::{Dispute, DisputeResult},
+        dispute_round::DisputeRound,
         error::BrightDisputesError,
-        jure::Jure,
-        types::{DisputeId, Result},
+        jure::{Jure, JuriesMap},
+        types::{DisputeId, Result, VoteValue},
+        vote::Vote,
     };
 
     #[ink(event)]
@@ -31,6 +33,12 @@ mod bright_disputes {
         defendant_id: AccountId,
     }
 
+    #[ink(event)]
+    pub struct DisputeResultEvent {
+        id: DisputeId,
+        result: DisputeResult,
+    }
+
     /// Main contract storage
     #[ink(storage)]
     pub struct BrightDisputes {
@@ -38,6 +46,31 @@ mod bright_disputes {
         juries_pool: Vec<AccountId>,
         juries: Mapping<AccountId, Jure>,
         disputes: Mapping<DisputeId, Dispute>,
+    }
+
+    impl JuriesMap for BrightDisputes {
+        fn get_jure_or_assert(&self, jure_id: AccountId) -> Result<Jure> {
+            self.juries
+                .get(jure_id)
+                .ok_or(BrightDisputesError::JureNotExist)
+        }
+
+        fn remove_random_juries_from_pool_or_assert(
+            &mut self,
+            except: &Vec<AccountId>,
+            number: u8,
+        ) -> Result<Vec<AccountId>> {
+            let juries_ids = self.get_random_juries_from_pool(&except, number, 123 as u64)?;
+            for id in &juries_ids {
+                self.remove_jure_from_pool_or_assert(*id)?;
+            }
+            Ok(juries_ids)
+        }
+
+        /// Update jure
+        fn update_jure(&mut self, jure: Jure) {
+            self.juries.insert(jure.id(), &jure);
+        }
     }
 
     impl BrightDisputes {
@@ -69,7 +102,8 @@ mod bright_disputes {
         /// Get single dispute by id
         #[ink(message)]
         pub fn remove_dispute(&mut self, dispute_id: DisputeId) -> Result<()> {
-            self.get_dispute_or_assert(dispute_id)?;
+            let dispute = self.get_dispute_or_assert(dispute_id)?;
+            dispute.assert_dispute_remove()?;
             self.disputes.remove(dispute_id);
 
             self.env().emit_event(DisputeClosed { id: dispute_id });
@@ -111,8 +145,10 @@ mod bright_disputes {
             let mut dispute = self.get_dispute_or_assert(dispute_id)?;
             let id = dispute.id();
             dispute.confirm_defendant(defendant_link)?;
+            dispute.set_dispute_round(DisputeRound::create(self.env().block_timestamp(), None));
             self.env()
                 .transfer(self.env().account_id(), dispute.escrow())?;
+            dispute.increment_deposit();
             self.update_dispute(dispute);
 
             self.env().emit_event(DefendantConfirmDispute {
@@ -149,6 +185,18 @@ mod bright_disputes {
             Ok(())
         }
 
+        /// Voting, only jure can do it.
+        #[ink(message)]
+        pub fn vote(&mut self, dispute_id: DisputeId, vote: VoteValue) -> Result<()> {
+            let caller = ink::env::caller::<ink::env::DefaultEnvironment>();
+            let mut dispute = self.get_dispute_or_assert(dispute_id)?;
+            let mut jure = self.get_jure_or_assert(caller)?;
+            dispute.vote(Vote::create(caller, vote))?;
+            jure.action_done(dispute.id())?;
+            self.update_dispute(dispute);
+            Ok(())
+        }
+
         /// Register as an active jure. Juries are picked
         /// from this pool to participate in disputes.
         #[ink(message)]
@@ -173,36 +221,13 @@ mod bright_disputes {
             Ok(())
         }
 
-        /// Assign jure to dispute
-        #[ink(message)]
-        pub fn assign_juries_to_dispute(
-            &mut self,
-            dispute_id: DisputeId,
-            number: u8,
-        ) -> Result<()> {
-            let mut dispute = self.get_dispute_or_assert(dispute_id)?;
-            let juries_ids = self.remove_random_juries_from_pool_or_assert(
-                &[dispute.owner(), dispute.defendant()].to_vec(),
-                number,
-            )?;
-
-            for jure_id in juries_ids {
-                let mut jure = self.get_jure_or_assert(jure_id)?;
-                dispute.assign_jure(&mut jure)?;
-                self.update_jure(jure);
-            }
-            self.update_dispute(dispute);
-
-            Ok(())
-        }
-
         /// Assigned jure can confirm his participation in dispute
         #[ink(message)]
         pub fn confirm_jure_participation_in_dispute(
             &mut self,
             dispute_id: DisputeId,
         ) -> Result<()> {
-            let dispute = self.get_dispute_or_assert(dispute_id)?;
+            let mut dispute = self.get_dispute_or_assert(dispute_id)?;
 
             let caller = ink::env::caller::<ink::env::DefaultEnvironment>();
             let mut jure = self.get_jure_or_assert(caller)?;
@@ -210,6 +235,122 @@ mod bright_disputes {
             self.env()
                 .transfer(self.env().account_id(), dispute.escrow())?;
             self.update_jure(jure);
+
+            dispute.increment_deposit();
+            self.update_dispute(dispute);
+            Ok(())
+        }
+
+        /// Judge can confirm his participation in dispute
+        #[ink(message)]
+        pub fn confirm_judge_participation_in_dispute(
+            &mut self,
+            dispute_id: DisputeId,
+        ) -> Result<()> {
+            let mut dispute = self.get_dispute_or_assert(dispute_id)?;
+
+            let caller = ink::env::caller::<ink::env::DefaultEnvironment>();
+            let mut jure = self.get_jure_or_assert(caller)?;
+            jure.confirm_participation_in_dispute(dispute_id)?;
+            self.env()
+                .transfer(self.env().account_id(), dispute.escrow())?;
+            self.update_jure(jure);
+
+            dispute.increment_deposit();
+            self.update_dispute(dispute);
+            Ok(())
+        }
+
+        /// Unregister jure from the active juries pool.
+        #[ink(message)]
+        pub fn process_dispute_round(&mut self, dispute_id: DisputeId) -> Result<()> {
+            let timestamp = self.env().block_timestamp();
+            let mut dispute = self.get_dispute_or_assert(dispute_id)?;
+            if let Err(e) = dispute.process_dispute_round(self, timestamp) {
+                match e {
+                    BrightDisputesError::DisputeRoundDeadlineReached => {
+                        // Check if judge counted the votes.
+                        if let Some(judge_id) = dispute.judge() {
+                            let judge = self.get_jure_or_assert(judge_id)?;
+                            if judge.is_requested_for_action(dispute_id) {
+                                dispute.move_to_banned(judge_id)?;
+                            }
+                        }
+
+                        // Check if juries votes
+                        for judge_id in dispute.juries() {
+                            let judge = self.get_jure_or_assert(judge_id)?;
+                            if judge.is_requested_for_action(dispute_id) {
+                                dispute.move_to_banned(judge_id)?;
+                            }
+                        }
+
+                        // Whenever deadline is reached, we start a new dispute round.
+                        dispute.on_dispute_round_deadline(timestamp)?;
+                    }
+
+                    BrightDisputesError::MajorityOfVotesNotReached => {
+                        // Check if juries votes
+                        for judge_id in dispute.juries() {
+                            let judge = self.get_jure_or_assert(judge_id)?;
+                            if judge.is_requested_for_action(dispute_id) {
+                                dispute.move_to_banned(judge_id)?;
+                            }
+                        }
+
+                        // Dispute round ended, but the majority of votes is not reached.
+                        if let Err(_) = dispute.next_dispute_round(timestamp) {
+                            return Err(e);
+                        }
+                    }
+                    _ => {
+                        self.update_dispute(dispute);
+                        return Err(e);
+                    }
+                }
+            }
+            self.update_dispute(dispute);
+            Ok(())
+        }
+
+        /// Judge can confirm his participation in dispute
+        #[ink(message)]
+        pub fn distribute_deposit(&mut self, dispute_id: DisputeId) -> Result<()> {
+            let mut dispute = self.get_dispute_or_assert(dispute_id)?;
+
+            // Check if dispute has ended.
+            dispute.assert_dispute_ended()?;
+
+            // Close dispute
+            dispute.close_dispute()?;
+            self.update_dispute(dispute.clone());
+
+            let mut accounts: Vec<AccountId> = Vec::new();
+
+            // Add owner
+            accounts.push(dispute.owner());
+
+            // Add defendant, only if he confirmed dispute
+            if dispute.has_defendant_confirmed_dispute() {
+                accounts.push(dispute.defendant());
+            }
+
+            // Add judge
+            if let Some(judge_id) = dispute.judge() {
+                accounts.push(judge_id);
+            }
+
+            // Add juries, who were not banned.
+            for jure_id in dispute.juries() {
+                accounts.push(jure_id);
+            }
+
+            // Split deposit and transfer founds.
+            let founds = dispute.deposit() / accounts.len() as Balance;
+            for account in accounts {
+                self.env().transfer(account, founds)?;
+            }
+
             Ok(())
         }
 
@@ -231,28 +372,6 @@ mod bright_disputes {
                 .ok_or(BrightDisputesError::DisputeNotExist)
         }
 
-        pub fn remove_random_juries_from_pool_or_assert(
-            &mut self,
-            except: &Vec<AccountId>,
-            number: u8,
-        ) -> Result<Vec<AccountId>> {
-            let juries_ids = self.get_random_jures_from_pool(&except, number, 123 as u64)?;
-            for id in &juries_ids {
-                self.remove_jure_from_pool_or_assert(*id)?;
-            }
-            Ok(juries_ids)
-        }
-
-        fn get_jure_or_assert(&mut self, jure_id: AccountId) -> Result<Jure> {
-            self.juries
-                .get(jure_id)
-                .ok_or(BrightDisputesError::JureNotExist)
-        }
-
-        fn update_jure(&mut self, jure: Jure) {
-            self.juries.insert(jure.id(), &jure);
-        }
-
         fn remove_jure_from_pool_or_assert(&mut self, jure_id: AccountId) -> Result<()> {
             if let Some(index) = self.juries_pool.iter().position(|&j| j == jure_id) {
                 self.juries_pool.remove(index);
@@ -261,7 +380,7 @@ mod bright_disputes {
             return Err(BrightDisputesError::NotRegisteredAsJure);
         }
 
-        fn get_random_jures_from_pool(
+        fn get_random_juries_from_pool(
             &self,
             except_juries: &Vec<AccountId>,
             number_of_juries: u8,
@@ -308,6 +427,23 @@ mod bright_disputes {
         use ink::env::{test::set_caller, DefaultEnvironment};
 
         use super::*;
+
+        fn create_test_bright_dispute_with_running_dispute() -> BrightDisputes {
+            let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
+            let mut bright_disputes = BrightDisputes::new();
+
+            // Alice creates a dispute
+            let dispute_id = bright_disputes
+                .create_dispute("https://brightinventions.pl/".into(), accounts.bob, 10)
+                .expect("Failed to create a dispute!");
+
+            // Confirm bob participation
+            set_caller::<DefaultEnvironment>(accounts.bob);
+            bright_disputes
+                .confirm_defendant(dispute_id, "".into())
+                .expect("Failed to confirm defendant a dispute!");
+            return bright_disputes;
+        }
 
         fn register_valid_juries(bright_disputes: &mut BrightDisputes) {
             let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
@@ -428,10 +564,32 @@ mod bright_disputes {
             let result = bright_disputes.remove_dispute(1);
             assert_eq!(result, Err(BrightDisputesError::DisputeNotExist));
 
+            // Create dispute
             bright_disputes
                 .create_dispute("https://brightinventions.pl".into(), accounts.bob, 10)
                 .expect("Failed to create a dispute!");
+            let result = bright_disputes.remove_dispute(1);
+            assert_eq!(result, Ok(()));
 
+            // Failed to remove dispute in "Running" state.
+            let mut bright_disputes = create_test_bright_dispute_with_running_dispute();
+            let result = bright_disputes.remove_dispute(1);
+            assert_eq!(result, Err(BrightDisputesError::InvalidDisputeState));
+
+            // Failed to remove dispute in "Ended" state.
+            let mut dispute = bright_disputes
+                .get_dispute(1)
+                .expect("Failed to get dispute!");
+            dispute
+                .end_dispute(DisputeResult::Owner)
+                .expect("Failed to end dispute!");
+            bright_disputes.update_dispute(dispute.clone());
+            let result = bright_disputes.remove_dispute(1);
+            assert_eq!(result, Err(BrightDisputesError::InvalidDisputeState));
+
+            // Success
+            dispute.close_dispute().expect("Failed to close dispute!");
+            bright_disputes.update_dispute(dispute);
             let result = bright_disputes.remove_dispute(1);
             assert_eq!(result, Ok(()));
         }
@@ -450,7 +608,7 @@ mod bright_disputes {
             let result = bright_disputes.confirm_defendant(1, defendant_link.into());
             assert_eq!(result, Err(BrightDisputesError::DisputeNotExist));
 
-            bright_disputes
+            let dispute_id = bright_disputes
                 .create_dispute("".into(), accounts.bob, 10)
                 .expect("Failed to create a dispute!");
 
@@ -466,6 +624,12 @@ mod bright_disputes {
             set_caller::<DefaultEnvironment>(accounts.bob);
             let result = bright_disputes.confirm_defendant(1, defendant_link.into());
             assert_eq!(result, Ok(()));
+
+            // Check if dispute round was started.
+            let dispute = bright_disputes
+                .get_dispute(dispute_id)
+                .expect("Failed to get dispute!");
+            assert!(dispute.dispute_round().is_some());
         }
 
         /// Test dispute owner description update
@@ -474,11 +638,7 @@ mod bright_disputes {
             let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
             set_caller::<DefaultEnvironment>(accounts.alice);
 
-            let mut bright_disputes = BrightDisputes::new();
-
-            bright_disputes
-                .create_dispute("https://brightinventions.pl/".into(), accounts.bob, 10)
-                .expect("Failed to create a dispute!");
+            let mut bright_disputes = create_test_bright_dispute_with_running_dispute();
 
             // Failed to update, wrong dispute
             let result = bright_disputes
@@ -529,7 +689,7 @@ mod bright_disputes {
 
         /// Test jure registration
         #[ink::test]
-        fn jure_registration() {
+        fn jure_register() {
             let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
             set_caller::<DefaultEnvironment>(accounts.alice);
 
@@ -552,7 +712,7 @@ mod bright_disputes {
 
         /// Test jure unregistration
         #[ink::test]
-        fn jure_unregistration() {
+        fn jure_unregister() {
             let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
             set_caller::<DefaultEnvironment>(accounts.alice);
 
@@ -579,90 +739,413 @@ mod bright_disputes {
             assert_eq!(result, Err(BrightDisputesError::NotRegisteredAsJure));
         }
 
-        // Test juries assigment to the dispute case.
+        // Test juries confirmation to the dispute case.
         #[ink::test]
-        fn assign_juries_to_dispute() {
+        fn confirm_judge_and_jure_participation_in_dispute() {
             let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
             set_caller::<DefaultEnvironment>(accounts.alice);
 
-            let mut bright_disputes = BrightDisputes::new();
-
-            // Create a dispute
-            let dispute_id = bright_disputes
-                .create_dispute("https://brightinventions.pl/".into(), accounts.bob, 10)
-                .expect("Failed to create a dispute!");
-
-            // Try to assign more juries when pool is empty
-            let result = bright_disputes.assign_juries_to_dispute(dispute_id, 1);
-            assert_eq!(result, Err(BrightDisputesError::JuriesPoolIsToSmall));
+            let mut bright_disputes = create_test_bright_dispute_with_running_dispute();
+            let dispute_id = 1;
 
             // Register charlie, django, eve and frank as a juries.
             register_valid_juries(&mut bright_disputes);
 
-            // Try to assign more juries than there is in the pool
-            let result = bright_disputes.assign_juries_to_dispute(dispute_id, 5);
-            assert_eq!(result, Err(BrightDisputesError::JuriesPoolIsToSmall));
-            assert_eq!(bright_disputes.juries_pool.len(), 4);
+            // Fail to confirm jure, when he is not assigned.
+            set_caller::<DefaultEnvironment>(accounts.charlie);
+            let result = bright_disputes.confirm_jure_participation_in_dispute(dispute_id);
+            assert_eq!(result, Err(BrightDisputesError::JureIsNotAssignedToDispute));
+
+            // Switch to "PickingJuriesAndJudge" state.
+            set_caller::<DefaultEnvironment>(accounts.alice);
+            bright_disputes
+                .process_dispute_round(dispute_id)
+                .expect("Failed to process dispute round!");
+
+            let dispute = bright_disputes
+                .get_dispute(dispute_id)
+                .expect("Failed to get dispute!");
+
+            let judge = dispute.judge().expect("Judge was not assigned!");
 
             // Success
-            let result = bright_disputes.assign_juries_to_dispute(dispute_id, 4);
+            set_caller::<DefaultEnvironment>(judge);
+            let result = bright_disputes.confirm_judge_participation_in_dispute(dispute_id);
             assert_eq!(result, Ok(()));
-            assert_eq!(bright_disputes.juries_pool.len(), 0);
 
-            // Check that there is no more juries left in the pool
-            let result = bright_disputes.assign_juries_to_dispute(dispute_id, 1);
-            assert_eq!(result, Err(BrightDisputesError::JuriesPoolIsToSmall));
-        }
+            // Success
+            for jure in &dispute.juries() {
+                set_caller::<DefaultEnvironment>(*jure);
+                assert_eq!(
+                    bright_disputes.confirm_jure_participation_in_dispute(dispute_id),
+                    Ok(())
+                );
+            }
 
-        // Test juries assignment to the dispute case.
-        #[ink::test]
-        fn assign_juries_to_dispute_fail_for_owner() {
-            let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
+            // Failed to confirm twice
+            let result = bright_disputes.confirm_jure_participation_in_dispute(dispute_id);
+            assert_eq!(
+                result,
+                Err(BrightDisputesError::JureAlreadyConfirmedDispute)
+            );
+
+            // Switch to "Voting" state.
             set_caller::<DefaultEnvironment>(accounts.alice);
-
-            let mut bright_disputes = BrightDisputes::new();
-
-            // Alice creates a dispute
-            let dispute_id = bright_disputes
-                .create_dispute("https://brightinventions.pl/".into(), accounts.bob, 10)
-                .expect("Failed to create a dispute!");
-
-            // Alice register as a jure in the pool
             bright_disputes
-                .register_as_an_active_jure()
-                .expect("Failed to register alice as a jure!");
-            assert_eq!(bright_disputes.juries_pool.len(), 1);
-
-            // Fail with assigning Alice as a Jure in her own dispute
-            let result = bright_disputes.assign_juries_to_dispute(dispute_id, 1);
-            assert_eq!(result, Err(BrightDisputesError::JuriesPoolIsToSmall));
-            assert_eq!(bright_disputes.juries_pool.len(), 1);
+                .process_dispute_round(dispute_id)
+                .expect("Failed to process dispute round!");
         }
 
-        // Test juries assignment to the dispute case.
+        // Check switching to next round when deadline appear.
         #[ink::test]
-        fn assign_juries_to_dispute_fail_for_defendant() {
+        fn vote() {
             let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
             set_caller::<DefaultEnvironment>(accounts.alice);
 
-            let mut bright_disputes = BrightDisputes::new();
+            let mut bright_disputes = create_test_bright_dispute_with_running_dispute();
+            let dispute_id = 1;
 
-            // Alice creates a dispute and bob is an defendant
-            let dispute_id = bright_disputes
-                .create_dispute("https://brightinventions.pl/".into(), accounts.bob, 10)
+            // Register charlie, eve, frank  and django as a juries.
+            register_valid_juries(&mut bright_disputes);
+
+            // Switch to "PickingJuriesAndJudge" state.
+            set_caller::<DefaultEnvironment>(accounts.alice);
+            bright_disputes
+                .process_dispute_round(dispute_id)
                 .expect("Failed to create a dispute!");
 
-            // Bob register as a jure in the pool
+            let dispute = bright_disputes
+                .get_dispute(dispute_id)
+                .expect("Failed to get dispute!");
+
+            // Assign all juries
+            let assigned_juries = dispute.juries();
+
+            let mut jure_not_assigned = vec![
+                accounts.charlie,
+                accounts.eve,
+                accounts.frank,
+                accounts.django,
+            ];
+            jure_not_assigned.retain(|id| !assigned_juries.contains(id));
+
+            // Confirm jure participation
+            set_caller::<DefaultEnvironment>(assigned_juries[0]);
+            bright_disputes
+                .confirm_jure_participation_in_dispute(dispute_id)
+                .expect("Failed confirm juries participation!");
+
+            set_caller::<DefaultEnvironment>(assigned_juries[1]);
+            bright_disputes
+                .confirm_jure_participation_in_dispute(dispute_id)
+                .expect("Failed confirm juries participation!");
+
+            set_caller::<DefaultEnvironment>(assigned_juries[2]);
+            bright_disputes
+                .confirm_jure_participation_in_dispute(dispute_id)
+                .expect("Failed confirm juries participation!");
+
+            // Assign judge
+            set_caller::<DefaultEnvironment>(jure_not_assigned[0]);
+            bright_disputes
+                .confirm_judge_participation_in_dispute(dispute_id)
+                .expect("Failed to confirm judge participation!");
+
+            // Switch state to "Voting" state
+            set_caller::<DefaultEnvironment>(accounts.alice);
+            let result = bright_disputes.process_dispute_round(dispute_id);
+            assert_eq!(result, Ok(()));
+
+            // Juries voting
+            set_caller::<DefaultEnvironment>(assigned_juries[0]);
+            bright_disputes.vote(dispute_id, 1).expect("Failed to vote");
+            set_caller::<DefaultEnvironment>(assigned_juries[1]);
+            bright_disputes.vote(dispute_id, 1).expect("Failed to vote");
+            set_caller::<DefaultEnvironment>(assigned_juries[2]);
+            bright_disputes.vote(dispute_id, 1).expect("Failed to vote");
+
+            // Switch state to "CountingTheVotes" state
+            set_caller::<DefaultEnvironment>(accounts.alice);
+            let result = bright_disputes.process_dispute_round(dispute_id);
+            assert_eq!(result, Ok(()));
+        }
+
+        // Check switching to next round can only be done by owner.
+        #[ink::test]
+        fn process_dispute_round_owner_call() {
+            let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
+            set_caller::<DefaultEnvironment>(accounts.alice);
+
+            let mut bright_disputes = create_test_bright_dispute_with_running_dispute();
+            let dispute_id = 1;
+
+            // Register charlie, eve, frank  and django as a juries.
+            register_valid_juries(&mut bright_disputes);
+
+            // Failed, defendant can not switch the state.
             set_caller::<DefaultEnvironment>(accounts.bob);
-            bright_disputes
-                .register_as_an_active_jure()
-                .expect("Failed to register bob as a jure!");
-            assert_eq!(bright_disputes.juries_pool.len(), 1);
+            let result = bright_disputes.process_dispute_round(dispute_id);
+            assert_eq!(result, Err(BrightDisputesError::NotAuthorized));
 
-            // Fail with assigning Bob as a Jure when he is a defendant of the dispute
-            let result = bright_disputes.assign_juries_to_dispute(dispute_id, 1);
+            // Success
+            set_caller::<DefaultEnvironment>(accounts.alice);
+            let result = bright_disputes.process_dispute_round(dispute_id);
+            assert_eq!(result, Ok(()));
+        }
+
+        // Check dispute round progress
+        #[ink::test]
+        fn process_dispute_round() {
+            let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
+            set_caller::<DefaultEnvironment>(accounts.alice);
+
+            let mut bright_disputes = create_test_bright_dispute_with_running_dispute();
+            let dispute_id = 1;
+
+            // Register charlie, eve, frank  and django as a juries.
+            register_valid_juries(&mut bright_disputes);
+
+            // Switch to "PickingJuriesAndJudge" state.
+            set_caller::<DefaultEnvironment>(accounts.alice);
+            bright_disputes
+                .process_dispute_round(dispute_id)
+                .expect("Failed to create a dispute!");
+
+            let dispute = bright_disputes
+                .get_dispute(dispute_id)
+                .expect("Failed to get dispute!");
+
+            // Assign all juries
+            let assigned_juries = dispute.juries();
+
+            let mut jure_not_assigned = vec![
+                accounts.charlie,
+                accounts.eve,
+                accounts.frank,
+                accounts.django,
+            ];
+            jure_not_assigned.retain(|id| !assigned_juries.contains(id));
+
+            // Confirm jure participation
+            set_caller::<DefaultEnvironment>(assigned_juries[0]);
+            bright_disputes
+                .confirm_jure_participation_in_dispute(dispute_id)
+                .expect("Failed confirm juries participation!");
+
+            set_caller::<DefaultEnvironment>(assigned_juries[1]);
+            bright_disputes
+                .confirm_jure_participation_in_dispute(dispute_id)
+                .expect("Failed confirm juries participation!");
+
+            set_caller::<DefaultEnvironment>(assigned_juries[2]);
+            bright_disputes
+                .confirm_jure_participation_in_dispute(dispute_id)
+                .expect("Failed confirm juries participation!");
+
+            // Assign judge
+            set_caller::<DefaultEnvironment>(jure_not_assigned[0]);
+            bright_disputes
+                .confirm_judge_participation_in_dispute(dispute_id)
+                .expect("Failed to confirm judge participation!");
+
+            // Switch state to "Voting" state
+            set_caller::<DefaultEnvironment>(accounts.alice);
+            let result = bright_disputes.process_dispute_round(dispute_id);
+            assert_eq!(result, Ok(()));
+
+            // Juries voting
+            set_caller::<DefaultEnvironment>(assigned_juries[0]);
+            bright_disputes.vote(dispute_id, 1).expect("Failed to vote");
+            set_caller::<DefaultEnvironment>(assigned_juries[1]);
+            bright_disputes.vote(dispute_id, 1).expect("Failed to vote");
+            set_caller::<DefaultEnvironment>(assigned_juries[2]);
+            bright_disputes.vote(dispute_id, 1).expect("Failed to vote");
+
+            // Switch state to CountingTheVotes
+            set_caller::<DefaultEnvironment>(accounts.alice);
+            let result = bright_disputes.process_dispute_round(dispute_id);
+            assert_eq!(result, Ok(()));
+
+            // Failed to count the votes, only judge can do it.
+            set_caller::<DefaultEnvironment>(accounts.alice);
+            let result = bright_disputes.process_dispute_round(dispute_id);
+            assert_eq!(result, Err(BrightDisputesError::NotAuthorized));
+
+            // Count the votes, dispute ends
+            set_caller::<DefaultEnvironment>(jure_not_assigned[0]);
+            let result = bright_disputes.process_dispute_round(dispute_id);
+            assert_eq!(result, Ok(()));
+        }
+
+        // Check switching to next rounds.
+        #[ink::test]
+        fn process_dispute_round_next_round() {
+            let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
+            set_caller::<DefaultEnvironment>(accounts.alice);
+
+            let mut bright_disputes = create_test_bright_dispute_with_running_dispute();
+            let dispute_id = 1;
+
+            // Register charlie, eve, frank  and django as a juries.
+            register_valid_juries(&mut bright_disputes);
+
+            // Switch to "PickingJuriesAndJudge" state.
+            set_caller::<DefaultEnvironment>(accounts.alice);
+            bright_disputes
+                .process_dispute_round(dispute_id)
+                .expect("Failed to create a dispute!");
+
+            let dispute = bright_disputes
+                .get_dispute(dispute_id)
+                .expect("Failed to get dispute!");
+
+            // Assign all juries
+            let assigned_juries = dispute.juries();
+
+            let mut jure_not_assigned = vec![
+                accounts.charlie,
+                accounts.eve,
+                accounts.frank,
+                accounts.django,
+            ];
+            jure_not_assigned.retain(|id| !assigned_juries.contains(id));
+
+            // Confirm jure participation
+            set_caller::<DefaultEnvironment>(assigned_juries[0]);
+            bright_disputes
+                .confirm_jure_participation_in_dispute(dispute_id)
+                .expect("Failed confirm juries participation!");
+
+            set_caller::<DefaultEnvironment>(assigned_juries[1]);
+            bright_disputes
+                .confirm_jure_participation_in_dispute(dispute_id)
+                .expect("Failed confirm juries participation!");
+
+            set_caller::<DefaultEnvironment>(assigned_juries[2]);
+            bright_disputes
+                .confirm_jure_participation_in_dispute(dispute_id)
+                .expect("Failed confirm juries participation!");
+
+            // Assign judge
+            set_caller::<DefaultEnvironment>(jure_not_assigned[0]);
+            bright_disputes
+                .confirm_judge_participation_in_dispute(dispute_id)
+                .expect("Failed to confirm judge participation!");
+
+            // Switch state to "Voting" state
+            set_caller::<DefaultEnvironment>(accounts.alice);
+            bright_disputes
+                .process_dispute_round(dispute_id)
+                .expect("Failed to process dispute round!");
+
+            // Juries voting
+            set_caller::<DefaultEnvironment>(assigned_juries[0]);
+            bright_disputes.vote(dispute_id, 1).expect("Failed to vote");
+            set_caller::<DefaultEnvironment>(assigned_juries[1]);
+            bright_disputes.vote(dispute_id, 1).expect("Failed to vote");
+            set_caller::<DefaultEnvironment>(assigned_juries[2]);
+            bright_disputes.vote(dispute_id, 0).expect("Failed to vote");
+
+            // Switch state to "CountingTheVotes" state
+            set_caller::<DefaultEnvironment>(accounts.alice);
+            let result = bright_disputes.process_dispute_round(dispute_id);
+            assert_eq!(result, Ok(()));
+
+            // Majority of votes not reached, new round.
+            set_caller::<DefaultEnvironment>(jure_not_assigned[0]);
+            let result = bright_disputes.process_dispute_round(dispute_id);
+            assert_eq!(result, Ok(()));
+
+            // New round
+            set_caller::<DefaultEnvironment>(accounts.alice);
+            let result = bright_disputes.process_dispute_round(dispute_id);
             assert_eq!(result, Err(BrightDisputesError::JuriesPoolIsToSmall));
-            assert_eq!(bright_disputes.juries_pool.len(), 1);
+        }
+
+        // Check deposit distribution
+        #[ink::test]
+        fn distribute_deposit() {
+            let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
+            set_caller::<DefaultEnvironment>(accounts.alice);
+
+            let mut bright_disputes = create_test_bright_dispute_with_running_dispute();
+            let dispute_id = 1;
+
+            // Register charlie, eve, frank  and django as a juries.
+            register_valid_juries(&mut bright_disputes);
+
+            // Switch to "PickingJuriesAndJudge" state.
+            set_caller::<DefaultEnvironment>(accounts.alice);
+            bright_disputes
+                .process_dispute_round(dispute_id)
+                .expect("Failed to create a dispute!");
+
+            let dispute = bright_disputes
+                .get_dispute(dispute_id)
+                .expect("Failed to get dispute!");
+
+            // Assign all juries
+            let assigned_juries = dispute.juries();
+
+            let mut jure_not_assigned = vec![
+                accounts.charlie,
+                accounts.eve,
+                accounts.frank,
+                accounts.django,
+            ];
+            jure_not_assigned.retain(|id| !assigned_juries.contains(id));
+
+            // Confirm jure participation
+            set_caller::<DefaultEnvironment>(assigned_juries[0]);
+            bright_disputes
+                .confirm_jure_participation_in_dispute(dispute_id)
+                .expect("Failed confirm juries participation!");
+
+            set_caller::<DefaultEnvironment>(assigned_juries[1]);
+            bright_disputes
+                .confirm_jure_participation_in_dispute(dispute_id)
+                .expect("Failed confirm juries participation!");
+
+            set_caller::<DefaultEnvironment>(assigned_juries[2]);
+            bright_disputes
+                .confirm_jure_participation_in_dispute(dispute_id)
+                .expect("Failed confirm juries participation!");
+
+            // Assign judge
+            set_caller::<DefaultEnvironment>(jure_not_assigned[0]);
+            bright_disputes
+                .confirm_judge_participation_in_dispute(dispute_id)
+                .expect("Failed to confirm judge participation!");
+
+            // Switch state to "Voting" state
+            set_caller::<DefaultEnvironment>(accounts.alice);
+            bright_disputes
+                .process_dispute_round(dispute_id)
+                .expect("Failed process dispute round!");
+
+            // Juries voting
+            set_caller::<DefaultEnvironment>(assigned_juries[0]);
+            bright_disputes.vote(dispute_id, 1).expect("Failed to vote");
+            set_caller::<DefaultEnvironment>(assigned_juries[1]);
+            bright_disputes.vote(dispute_id, 1).expect("Failed to vote");
+            set_caller::<DefaultEnvironment>(assigned_juries[2]);
+            bright_disputes.vote(dispute_id, 1).expect("Failed to vote");
+
+            // Switch state to CountingTheVotes
+            set_caller::<DefaultEnvironment>(accounts.alice);
+            bright_disputes
+                .process_dispute_round(dispute_id)
+                .expect("Failed process dispute round!");
+
+            // Count the votes, dispute ends
+            set_caller::<DefaultEnvironment>(jure_not_assigned[0]);
+            bright_disputes
+                .process_dispute_round(dispute_id)
+                .expect("Failed process dispute round!");
+
+            set_caller::<DefaultEnvironment>(accounts.bob);
+            let result = bright_disputes.distribute_deposit(dispute_id);
+            assert_eq!(result, Ok(()));
         }
     }
 }
