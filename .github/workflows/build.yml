@@ -18,13 +18,13 @@ jobs:
       - name: Install nightly
         uses: actions-rs/toolchain@v1
         with:
-            toolchain: nightly
+            toolchain: nightly-2022-11-28
             override: true
       - name: Update Rust environment
-        run: rustup component add rust-src
+        run: rustup component add rust-src --toolchain nightly-2022-11-28-x86_64-unknown-linux-gnu
       - name: Adding WebAssembly target
-        run: rustup target add wasm32-unknown-unknown --toolchain nightly
+        run: rustup target add x86_64-unknown-linux-gnu wasm32-unknown-unknown
       - name: Build bright disputes
-        run: cd contract && cargo +nightly build --release --verbose
+        run: cd contract && cargo +nightly-2022-11-28 build --release --verbose
       - name: Run bright disputes unit tests
-        run: cd contract && cargo +nightly test --release --verbose
+        run: cd contract && cargo +nightly-2022-11-28 test --release --verbose

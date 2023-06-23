@@ -1,12 +1,15 @@
+use core::ops::Mul;
+
 use ink::{
     prelude::{string::String, vec::Vec},
     primitives::AccountId,
 };
 
 use crate::{
+    dispute_round::DisputeRound,
     error::BrightDisputesError,
-    jure::Jure,
-    types::{Balance, DisputeId, Result},
+    jure::{Jure, JuriesMap},
+    types::{Balance, DisputeId, Result, Timestamp},
     vote::Vote,
 };
 
@@ -17,10 +20,28 @@ use crate::{
 )]
 pub enum State {
     Created,
-    Confirmed,
-    CollectingJuries,
-    PickingJudge,
-    Voting,
+    Running,
+    Ended,
+    Closed,
+}
+
+#[derive(Clone, Debug, PartialEq, scale::Decode, scale::Encode)]
+#[cfg_attr(
+    feature = "std",
+    derive(ink::storage::traits::StorageLayout, scale_info::TypeInfo)
+)]
+pub enum DisputeResult {
+    Owner,
+    Defendant,
+}
+
+impl DisputeResult {
+    pub fn opposite(&self) -> DisputeResult {
+        if *self == DisputeResult::Owner {
+            return DisputeResult::Defendant;
+        }
+        return DisputeResult::Owner;
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, scale::Decode, scale::Encode)]
@@ -34,16 +55,25 @@ pub struct Dispute {
     owner: AccountId,
     owner_link: String,
     escrow: Balance,
+    deposit: Balance,
 
     defendant: AccountId,
     defendant_link: Option<String>,
+    dispute_result: Option<DisputeResult>,
+    dispute_round: Option<DisputeRound>,
+    dispute_round_counter: u8,
 
     judge: Option<AccountId>,
     juries: Vec<AccountId>,
+    banned: Vec<AccountId>,
     votes: Vec<Vote>,
 }
 
 impl Dispute {
+    const MAX_DISPUTE_ROUNDS: u8 = 3u8;
+    const WINING_MAJORITY: usize = 75;
+    const LOSING_MAJORITY: usize = 100 - Dispute::WINING_MAJORITY;
+
     /// Creates a new dispute
     pub fn create(
         id: DisputeId,
@@ -57,38 +87,17 @@ impl Dispute {
             owner: ink::env::caller::<ink::env::DefaultEnvironment>(),
             owner_link,
             escrow,
+            deposit: escrow,
             defendant,
             defendant_link: None,
+            dispute_result: None,
+            dispute_round: None,
+            dispute_round_counter: 0u8,
             judge: None,
             juries: Vec::new(),
+            banned: Vec::new(),
             votes: Vec::new(),
         }
-    }
-
-    /// Confirm defendant participation in dispute
-    pub fn confirm_defendant(&mut self, defendant_link: String) -> Result<()> {
-        self.assert_defendant_call()?;
-        self.assert_state(State::Created)?;
-        self.defendant_link = Some(defendant_link);
-        self.state = State::Confirmed;
-        Ok(())
-    }
-
-    /// Make a vote
-    #[allow(dead_code)]
-    pub fn vote(&mut self, vote: Vote) -> Result<()> {
-        self.assert_jure(vote.jure())?;
-        self.assert_not_voted(vote.jure())?;
-        self.votes.push(vote);
-        Ok(())
-    }
-
-    /// Add jure to the dispute
-    pub fn assign_jure(&mut self, jure: &mut Jure) -> Result<()> {
-        self.assert_not_jure(jure.id())?;
-        jure.assign_to_dispute(self.id)?;
-        self.juries.push(jure.id());
-        Ok(())
     }
 
     /// Get dispute id
@@ -111,9 +120,39 @@ impl Dispute {
         return self.escrow;
     }
 
+    /// Get dispute escrow
+    pub fn deposit(&self) -> Balance {
+        return self.deposit;
+    }
+
+    /// Get judge
+    pub fn judge(&self) -> Option<AccountId> {
+        return self.judge.clone();
+    }
+
+    /// Get dispute round
+    pub fn dispute_round(&self) -> Option<DisputeRound> {
+        return self.dispute_round.clone();
+    }
+
     /// Get juries
     pub fn juries(&self) -> Vec<AccountId> {
         return self.juries.clone();
+    }
+
+    /// Get banned
+    pub fn banned(&self) -> Vec<AccountId> {
+        return self.banned.clone();
+    }
+
+    /// Get banned
+    pub fn votes(&self) -> Vec<Vote> {
+        return self.votes.clone();
+    }
+
+    /// Getter dispute result
+    pub fn get_dispute_result(&self) -> Option<DisputeResult> {
+        self.dispute_result.clone()
     }
 
     /// Set owner decription link
@@ -123,18 +162,228 @@ impl Dispute {
         Ok(())
     }
 
-    /// Set defendant decription link
+    /// Set defendant description link
     pub fn set_defendant_link(&mut self, defendant_link: String) -> Result<()> {
         self.assert_defendant_call()?;
         self.defendant_link = Some(defendant_link);
         Ok(())
     }
 
-    fn assert_owner_call(&self) -> Result<()> {
+    /// Check if defendant confirmed a dispute
+    pub fn has_defendant_confirmed_dispute(&self) -> bool {
+        self.defendant_link.is_some()
+    }
+
+    /// Start new dispute round
+    pub fn set_dispute_round(&mut self, dispute: DisputeRound) {
+        self.dispute_round = Some(dispute);
+    }
+
+    /// Increment a dispute deposit by an escrow
+    pub fn increment_deposit(&mut self) {
+        self.deposit += self.escrow;
+    }
+
+    /// End the dispute and publish result.
+    pub fn end_dispute(&mut self, result: DisputeResult) -> Result<()> {
+        self.assert_state(State::Running)?;
+        self.state = State::Ended;
+        self.dispute_result = Some(result.clone());
+        self.dispute_round = None;
+
+        // Move juries who wrongly voted to banned list
+        let juries_to_ban = self.get_juries_voted_against(result.opposite());
+        for jure in juries_to_ban {
+            self.move_to_banned(jure)
+                .expect("Jure is not assigned to the dispute!");
+        }
+        Ok(())
+    }
+
+    /// Close the dispute.
+    pub fn close_dispute(&mut self) -> Result<()> {
+        self.assert_state(State::Ended)?;
+        self.state = State::Closed;
+        Ok(())
+    }
+
+    /// Confirm defendant participation in dispute
+    pub fn confirm_defendant(&mut self, defendant_link: String) -> Result<()> {
+        self.assert_defendant_call()?;
+        self.assert_state(State::Created)?;
+        self.defendant_link = Some(defendant_link);
+        self.state = State::Running;
+        Ok(())
+    }
+
+    /// Make a vote
+    pub fn vote(&mut self, vote: Vote) -> Result<()> {
+        self.assert_state(State::Running)?;
+        self.assert_can_vote()?;
+        self.assert_jure(vote.jure())?;
+        self.assert_not_voted(vote.jure())?;
+        self.votes.push(vote);
+        Ok(())
+    }
+
+    /// Count the votes and return the result.
+    pub fn count_votes(&self) -> Result<DisputeResult> {
+        self.assert_state(State::Running)?;
+        self.assert_judge()?;
+
+        let total_votes = self.votes.len();
+        if total_votes != self.juries.len() || self.votes.is_empty() {
+            return Err(BrightDisputesError::MajorityOfVotesNotReached);
+        }
+
+        let owner_votes = self
+            .votes
+            .iter()
+            .filter(|&v| v.is_vote_against_owner())
+            .count()
+            .mul(100);
+
+        if let Some(res) = owner_votes.checked_div(total_votes) {
+            if res >= Dispute::WINING_MAJORITY {
+                return Ok(DisputeResult::Owner);
+            } else if res <= Dispute::LOSING_MAJORITY {
+                return Ok(DisputeResult::Defendant);
+            }
+        }
+        Err(BrightDisputesError::MajorityOfVotesNotReached)
+    }
+
+    /// Assign jure to the dispute
+    pub fn assign_jure(&mut self, jure: &mut Jure) -> Result<()> {
+        self.assert_state(State::Running)?;
+        self.assert_not_jure(jure.id())?;
+        self.assert_not_owner_call(jure.id())?;
+        self.assert_not_defendant_call(jure.id())?;
+        jure.assign_to_dispute(self.id)?;
+        self.juries.push(jure.id());
+        Ok(())
+    }
+
+    /// Assign judge to the dispute
+    pub fn assign_judge(&mut self, judge: &mut Jure) -> Result<()> {
+        self.assert_state(State::Running)?;
+        self.assert_not_owner_call(judge.id())?;
+        self.assert_not_defendant_call(judge.id())?;
+        if self.judge.is_some() {
+            return Err(BrightDisputesError::JudgeAlreadyAssignedToDispute);
+        }
+        if self.juries().contains(&judge.id()) {
+            return Err(BrightDisputesError::JureAlreadyAssignedToDispute);
+        }
+        judge.assign_to_dispute(self.id)?;
+        self.judge = Some(judge.id());
+        Ok(())
+    }
+
+    /// Move jure / judge to banned list
+    pub fn move_to_banned(&mut self, account_id: AccountId) -> Result<()> {
+        if self.judge.is_some() && (self.judge.unwrap() == account_id) {
+            self.judge = None;
+            self.banned.push(account_id);
+        } else if let Some(index) = self.juries.iter().position(|&id| id == account_id) {
+            self.juries.remove(index);
+            self.banned.push(account_id);
+        } else {
+            return Err(BrightDisputesError::InvalidAction);
+        }
+        Ok(())
+    }
+
+    /// Handle dispute round deadline
+    pub fn on_dispute_round_deadline(&mut self, timestamp: Timestamp) -> Result<()> {
+        self.assert_state(State::Running)?;
+
+        // Clear votes.
+        self.votes.clear();
+
+        // Set new dispute round.
+        self.dispute_round = Some(DisputeRound::create(timestamp, None));
+        Ok(())
+    }
+
+    /// Start new dispute round
+    pub fn next_dispute_round(&mut self, timestamp: Timestamp) -> Result<()> {
+        self.assert_state(State::Running)?;
+        if self.dispute_round_counter >= Dispute::MAX_DISPUTE_ROUNDS {
+            return Err(BrightDisputesError::DisputeRoundLimitReached);
+        }
+
+        // Clear votes.
+        self.votes.clear();
+
+        // Increase the number of juries for the next round.
+        let number_of_juries: u8 = self.juries.len() as u8 + 2u8;
+
+        // Set new dispute round
+        self.dispute_round = Some(DisputeRound::create(timestamp, Some(number_of_juries)));
+        self.dispute_round_counter += 1;
+
+        Ok(())
+    }
+
+    /// Handle dispute rounds.
+    pub fn process_dispute_round(
+        &mut self,
+        contract: &mut dyn JuriesMap,
+        timestamp: Timestamp,
+    ) -> Result<()> {
+        self.assert_state(State::Running)?;
+        if let Some(mut round) = self.dispute_round.clone() {
+            round.process_dispute_round(contract, self, timestamp)?;
+            self.dispute_round = Some(round);
+            return Ok(());
+        }
+        Err(BrightDisputesError::DisputeRoundNotStarted)
+    }
+
+    /// Get juries who have not voted.
+    pub fn get_not_voted_juries(&self) -> Vec<AccountId> {
+        self.juries()
+            .iter()
+            .filter(|&id| self.votes().iter().position(|v| v.jure() == *id).is_none())
+            .map(|&id| id)
+            .collect()
+    }
+
+    /// Get juries who vote against one of the sides.
+    fn get_juries_voted_against(&self, dispute_result: DisputeResult) -> Vec<AccountId> {
+        self.votes()
+            .iter()
+            .filter(|&vote| {
+                (dispute_result == DisputeResult::Owner && vote.is_vote_against_owner())
+                    || (dispute_result == DisputeResult::Defendant && !vote.is_vote_against_owner())
+            })
+            .map(|vote| vote.jure())
+            .collect()
+    }
+
+    /// Assert if call is done not by the owner
+    pub fn assert_owner_call(&self) -> Result<()> {
         if self.owner != ink::env::caller::<ink::env::DefaultEnvironment>() {
             return Err(BrightDisputesError::NotAuthorized);
         }
         Ok(())
+    }
+
+    /// Assert if dispute is not ended.
+    pub fn assert_dispute_ended(&self) -> Result<()> {
+        if self.state != State::Ended && self.dispute_round_counter < Dispute::MAX_DISPUTE_ROUNDS {
+            return Err(BrightDisputesError::InvalidDisputeState);
+        }
+        Ok(())
+    }
+
+    /// Assert if dispute can not be removed.
+    pub fn assert_dispute_remove(&self) -> Result<()> {
+        if self.state == State::Created || self.state == State::Closed {
+            return Ok(());
+        }
+        return Err(BrightDisputesError::InvalidDisputeState);
     }
 
     fn assert_defendant_call(&self) -> Result<()> {
@@ -144,9 +393,23 @@ impl Dispute {
         Ok(())
     }
 
+    fn assert_not_owner_call(&self, account: AccountId) -> Result<()> {
+        if self.owner == account {
+            return Err(BrightDisputesError::NotAuthorized);
+        }
+        Ok(())
+    }
+
+    fn assert_not_defendant_call(&self, account: AccountId) -> Result<()> {
+        if self.defendant == account {
+            return Err(BrightDisputesError::NotAuthorized);
+        }
+        Ok(())
+    }
+
     fn assert_state(&self, state: State) -> Result<()> {
         if self.state != state {
-            return Err(BrightDisputesError::InvalidState);
+            return Err(BrightDisputesError::InvalidDisputeState);
         }
         Ok(())
     }
@@ -169,6 +432,15 @@ impl Dispute {
         return Ok(());
     }
 
+    fn assert_judge(&self) -> Result<()> {
+        if let Some(judge) = self.judge {
+            if judge == ink::env::caller::<ink::env::DefaultEnvironment>() {
+                return Ok(());
+            }
+        }
+        return Err(BrightDisputesError::NotAuthorized);
+    }
+
     fn assert_not_voted(&self, jure: AccountId) -> Result<()> {
         for v in &self.votes {
             if v.jure() == jure {
@@ -177,6 +449,14 @@ impl Dispute {
         }
         return Ok(());
     }
+
+    fn assert_can_vote(&self) -> Result<()> {
+        if let Some(round) = &self.dispute_round {
+            round.assert_if_not_voting_time()?;
+            return Ok(());
+        }
+        Err(BrightDisputesError::WrongDisputeRoundState)
+    }
 }
 
 #[cfg(test)]
@@ -184,23 +464,35 @@ mod tests {
     use ink::env::{test::set_caller, DefaultEnvironment};
 
     use super::*;
+    use crate::{dispute_round::mock::DisputeRoundFake, jure::mock::JuriesMapMock};
 
-    fn default_test_dispute() -> Dispute {
+    fn default_test_running_dispute() -> Dispute {
         let escrow_amount: Balance = 15;
         let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
         set_caller::<DefaultEnvironment>(accounts.alice);
 
-        Dispute::create(
+        let mut dispute = Dispute::create(
             1,
             "https://brightinventions.pl/owner".into(),
             accounts.bob,
             escrow_amount,
-        )
+        );
+        dispute.state = State::Running;
+        dispute
     }
 
     #[ink::test]
     fn create_dispute() {
-        let dispute = default_test_dispute();
+        let escrow_amount: Balance = 15;
+        let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
+        set_caller::<DefaultEnvironment>(accounts.alice);
+
+        let dispute = Dispute::create(
+            1,
+            "https://brightinventions.pl/owner".into(),
+            accounts.bob,
+            escrow_amount,
+        );
         let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
 
         assert_eq!(dispute.id, 1);
@@ -208,20 +500,27 @@ mod tests {
         assert_eq!(dispute.owner, accounts.alice);
         assert_eq!(dispute.owner_link, "https://brightinventions.pl/owner");
         assert_eq!(dispute.escrow, 15);
+        assert_eq!(dispute.deposit, 15);
         assert_eq!(dispute.defendant, accounts.bob);
         assert_eq!(dispute.defendant_link, None);
+        assert_eq!(dispute.dispute_result, None);
+        assert_eq!(dispute.dispute_round_counter, 0u8);
         assert_eq!(dispute.judge, None);
         assert_eq!(dispute.juries.len(), 0);
+        assert_eq!(dispute.banned.len(), 0);
         assert_eq!(dispute.votes.len(), 0);
     }
 
     #[ink::test]
     fn vote() {
         let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
-        let mut dispute = default_test_dispute();
+        let mut dispute = default_test_running_dispute();
 
         let mut jure = Jure::create(accounts.charlie);
         dispute.assign_jure(&mut jure).expect("Unable to add jure!");
+
+        // Force "Voting" state
+        dispute.dispute_round = Some(DisputeRoundFake::voting(0u64));
 
         // Only jure can vote
         let result = dispute.vote(Vote::create(accounts.bob, 1));
@@ -237,13 +536,87 @@ mod tests {
     }
 
     #[ink::test]
+    fn count_votes() {
+        let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
+        let mut dispute = default_test_running_dispute();
+
+        // Force "Voting" state
+        dispute.dispute_round = Some(DisputeRoundFake::voting(0u64));
+
+        let mut charlie = Jure::create(accounts.charlie);
+        dispute
+            .assign_jure(&mut charlie)
+            .expect("Unable to add jure!");
+
+        let mut eve = Jure::create(accounts.eve);
+        dispute.assign_jure(&mut eve).expect("Unable to add jure!");
+
+        let mut frank = Jure::create(accounts.frank);
+        dispute
+            .assign_jure(&mut frank)
+            .expect("Unable to add jure!");
+
+        let mut django = Jure::create(accounts.django);
+        dispute
+            .assign_judge(&mut django)
+            .expect("Unable to add jure!");
+
+        // Test, only judge can count the votes.
+        set_caller::<DefaultEnvironment>(accounts.alice);
+        let result = dispute.count_votes();
+        assert_eq!(result, Err(BrightDisputesError::NotAuthorized));
+
+        set_caller::<DefaultEnvironment>(accounts.bob);
+        let result = dispute.count_votes();
+        assert_eq!(result, Err(BrightDisputesError::NotAuthorized));
+
+        set_caller::<DefaultEnvironment>(accounts.charlie);
+        let result = dispute.count_votes();
+        assert_eq!(result, Err(BrightDisputesError::NotAuthorized));
+
+        set_caller::<DefaultEnvironment>(accounts.django);
+        let result = dispute.count_votes();
+        assert_eq!(result, Err(BrightDisputesError::MajorityOfVotesNotReached));
+
+        // Voting
+        dispute
+            .vote(Vote::create(accounts.charlie, 1))
+            .expect("Failed to vote!");
+
+        dispute
+            .vote(Vote::create(accounts.eve, 1))
+            .expect("Failed to vote!");
+
+        set_caller::<DefaultEnvironment>(accounts.django);
+        let result = dispute.count_votes();
+        assert_eq!(result, Err(BrightDisputesError::MajorityOfVotesNotReached));
+
+        dispute
+            .vote(Vote::create(accounts.frank, 1))
+            .expect("Failed to vote!");
+
+        set_caller::<DefaultEnvironment>(accounts.django);
+        let result = dispute.count_votes();
+        assert_eq!(result, Ok(DisputeResult::Owner));
+    }
+
+    #[ink::test]
     fn assign_jure() {
         let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
-        let mut dispute = default_test_dispute();
+        let mut dispute = default_test_running_dispute();
 
-        let mut jure = Jure::create(accounts.charlie);
+        // Failed, owner can't assign as a jure to dispute
+        let mut alice = Jure::create(accounts.alice);
+        let result = dispute.assign_jure(&mut alice);
+        assert_eq!(result, Err(BrightDisputesError::NotAuthorized));
+
+        // Failed, defendant can't assign as a jure to dispute
+        let mut bob = Jure::create(accounts.bob);
+        let result = dispute.assign_jure(&mut bob);
+        assert_eq!(result, Err(BrightDisputesError::NotAuthorized));
 
         // Success
+        let mut jure = Jure::create(accounts.charlie);
         let result = dispute.assign_jure(&mut jure);
         assert_eq!(result, Ok(()));
         assert_eq!(jure.assigned_dispute(), Some(1));
@@ -255,10 +628,158 @@ mod tests {
     }
 
     #[ink::test]
+    fn assign_judge() {
+        let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
+        let mut dispute = default_test_running_dispute();
+
+        let mut charlie = Jure::create(accounts.charlie);
+        dispute
+            .assign_jure(&mut charlie)
+            .expect("Unable to assign \"charlie\" as a jure!");
+
+        // Unable to assign jure as a judge
+        let result = dispute.assign_judge(&mut charlie);
+        assert_eq!(
+            result,
+            Err(BrightDisputesError::JureAlreadyAssignedToDispute)
+        );
+
+        // Failed, owner can't assign as a judge to dispute
+        let mut alice = Jure::create(accounts.alice);
+        let result = dispute.assign_judge(&mut alice);
+        assert_eq!(result, Err(BrightDisputesError::NotAuthorized));
+
+        // Failed, defendant can't assign as a judge to dispute
+        let mut bob = Jure::create(accounts.bob);
+        let result = dispute.assign_judge(&mut bob);
+        assert_eq!(result, Err(BrightDisputesError::NotAuthorized));
+
+        let mut eve = Jure::create(accounts.eve);
+
+        // Success
+        let result = dispute.assign_judge(&mut eve);
+        assert_eq!(result, Ok(()));
+        assert_eq!(eve.assigned_dispute(), Some(1));
+
+        // Jure already added
+        let result = dispute.assign_judge(&mut eve);
+        assert_eq!(
+            result,
+            Err(BrightDisputesError::JudgeAlreadyAssignedToDispute)
+        );
+        assert_eq!(eve.assigned_dispute(), Some(1));
+    }
+
+    #[ink::test]
+    fn move_to_banned() {
+        let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
+        let mut dispute = default_test_running_dispute();
+
+        let mut jure = Jure::create(accounts.charlie);
+        dispute.assign_jure(&mut jure).expect("Unable to add jure!");
+
+        let mut judge = Jure::create(accounts.django);
+        dispute
+            .assign_judge(&mut judge)
+            .expect("Unable to add judge!");
+
+        // Failed to moved unassigned jure or judge.
+        assert_eq!(
+            dispute.move_to_banned(accounts.frank),
+            Err(BrightDisputesError::InvalidAction)
+        );
+        assert_eq!(dispute.banned.len(), 0);
+
+        // Failed to moved owner.
+        assert_eq!(
+            dispute.move_to_banned(accounts.alice),
+            Err(BrightDisputesError::InvalidAction)
+        );
+        assert_eq!(dispute.banned.len(), 0);
+
+        // Failed to moved defendant.
+        assert_eq!(
+            dispute.move_to_banned(accounts.bob),
+            Err(BrightDisputesError::InvalidAction)
+        );
+        assert_eq!(dispute.banned.len(), 0);
+
+        // Success, moved jure.
+        let result = dispute.move_to_banned(accounts.charlie);
+        assert_eq!(result, Ok(()));
+        assert_eq!(dispute.juries.len(), 0);
+        assert_eq!(dispute.banned.len(), 1);
+        assert_eq!(dispute.banned[0], accounts.charlie);
+
+        // Success, moved judge.
+        let result = dispute.move_to_banned(accounts.django);
+        assert_eq!(result, Ok(()));
+        assert_eq!(dispute.judge, None);
+        assert_eq!(dispute.banned.len(), 2);
+        assert_eq!(dispute.banned[1], accounts.django);
+    }
+
+    #[ink::test]
+    fn set_dispute_round() {
+        let mut dispute = default_test_running_dispute();
+
+        // Check initial state
+        assert!(dispute.dispute_round.is_none());
+
+        // Success
+        dispute.set_dispute_round(DisputeRound::create(0u64, None));
+        assert!(dispute.dispute_round.is_some());
+    }
+
+    #[ink::test]
+    fn process_dispute_round() {
+        let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
+
+        set_caller::<DefaultEnvironment>(accounts.alice);
+
+        let mut dispute = Dispute::create(
+            1,
+            "https://brightinventions.pl/owner".into(),
+            accounts.bob,
+            20,
+        );
+
+        let mut juries = JuriesMapMock::create(Jure::create(accounts.charlie));
+
+        // Failed, dispute round not started
+        let result = dispute.process_dispute_round(&mut juries, 0u64);
+        assert_eq!(result, Err(BrightDisputesError::InvalidDisputeState));
+
+        set_caller::<DefaultEnvironment>(accounts.bob);
+        dispute
+            .confirm_defendant("".into())
+            .expect("Failed to confirm defendant.");
+
+        set_caller::<DefaultEnvironment>(accounts.alice);
+
+        // Failed, dispute round not started
+        let result = dispute.process_dispute_round(&mut juries, 0u64);
+        assert_eq!(result, Err(BrightDisputesError::DisputeRoundNotStarted));
+
+        dispute.set_dispute_round(DisputeRound::create(0u64, None));
+
+        // Failed, condition not meet.
+        let result = dispute.process_dispute_round(&mut juries, 0u64);
+        assert_eq!(result, Err(BrightDisputesError::JuriesPoolIsToSmall));
+    }
+
+    #[ink::test]
     fn confirm_defendant() {
         let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
         let defendant_link: String = "https://brightinventions.pl/defendant".into();
-        let mut dispute = default_test_dispute();
+        set_caller::<DefaultEnvironment>(accounts.alice);
+
+        let mut dispute = Dispute::create(
+            1,
+            "https://brightinventions.pl/owner".into(),
+            accounts.bob,
+            15,
+        );
 
         // Only defendant can confirm
         set_caller::<DefaultEnvironment>(accounts.alice);
@@ -267,18 +788,20 @@ mod tests {
 
         // Success
         set_caller::<DefaultEnvironment>(accounts.bob);
+        assert_eq!(dispute.has_defendant_confirmed_dispute(), false);
         let result = dispute.confirm_defendant(defendant_link.clone());
         assert_eq!(result, Ok(()));
+        assert_eq!(dispute.has_defendant_confirmed_dispute(), true);
         assert_eq!(dispute.defendant_link, Some(defendant_link.clone()));
 
         // Invalid state
         let result = dispute.confirm_defendant(defendant_link);
-        assert_eq!(result, Err(BrightDisputesError::InvalidState));
+        assert_eq!(result, Err(BrightDisputesError::InvalidDisputeState));
     }
 
     #[ink::test]
     fn set_owner_link() {
-        let mut dispute = default_test_dispute();
+        let mut dispute = default_test_running_dispute();
         let owner_link = dispute.owner_link.clone();
 
         // Only owner can change link
@@ -306,7 +829,7 @@ mod tests {
 
     #[ink::test]
     fn set_defendant_link() {
-        let mut dispute = default_test_dispute();
+        let mut dispute = default_test_running_dispute();
         let defendant_link = dispute.defendant_link.clone();
 
         // Only defendant can change link
@@ -330,5 +853,189 @@ mod tests {
         let result = dispute.set_defendant_link(link2.clone());
         assert_eq!(result, Ok(()));
         assert_eq!(dispute.defendant_link, Some(link2));
+    }
+
+    #[ink::test]
+    fn get_not_voted_juries() {
+        let mut dispute = default_test_running_dispute();
+
+        let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
+        let mut charlie = Jure::create(accounts.charlie);
+        dispute
+            .assign_jure(&mut charlie)
+            .expect("Unable to add jure!");
+
+        let mut eve = Jure::create(accounts.eve);
+        dispute.assign_jure(&mut eve).expect("Unable to add jure!");
+
+        // Force "Voting" state
+        dispute.dispute_round = Some(DisputeRoundFake::voting(0u64));
+
+        assert_eq!(
+            dispute.get_not_voted_juries(),
+            vec![accounts.charlie, accounts.eve]
+        );
+
+        dispute
+            .vote(Vote::create(accounts.charlie, 1))
+            .expect("Failed to vote!");
+
+        assert_eq!(dispute.get_not_voted_juries(), vec![accounts.eve]);
+    }
+
+    #[ink::test]
+    fn next_dispute_round_limit() {
+        let mut dispute = default_test_running_dispute();
+
+        for _ in 0..Dispute::MAX_DISPUTE_ROUNDS {
+            let result = dispute.next_dispute_round(0u64);
+            assert_eq!(result, Ok(()));
+        }
+        let result = dispute.next_dispute_round(0u64);
+        assert_eq!(result, Err(BrightDisputesError::DisputeRoundLimitReached));
+    }
+
+    #[ink::test]
+    fn next_dispute_round() {
+        let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
+        let mut dispute = default_test_running_dispute();
+
+        // Force "Voting" state
+        dispute.dispute_round = Some(DisputeRoundFake::voting(0u64));
+
+        let mut charlie = Jure::create(accounts.charlie);
+        dispute
+            .assign_jure(&mut charlie)
+            .expect("Unable to add jure!");
+        dispute
+            .vote(Vote::create(accounts.charlie, 1))
+            .expect("Failed to vote!");
+
+        let mut eve = Jure::create(accounts.eve);
+        dispute.assign_jure(&mut eve).expect("Unable to add jure!");
+
+        assert_eq!(dispute.votes().len(), 1);
+        assert_eq!(dispute.juries().len(), 2);
+        assert_eq!(dispute.banned().len(), 0);
+
+        let result = dispute.next_dispute_round(0u64);
+        assert_eq!(result, Ok(()));
+
+        assert_eq!(dispute.votes().len(), 0);
+        assert_eq!(dispute.juries().len(), 2);
+    }
+
+    #[ink::test]
+    fn increment_deposit() {
+        let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
+        set_caller::<DefaultEnvironment>(accounts.alice);
+        let mut dispute = Dispute::create(1, "".into(), accounts.bob, 15);
+
+        assert_eq!(dispute.deposit, 15);
+        dispute.increment_deposit();
+        assert_eq!(dispute.deposit, 30);
+    }
+
+    #[ink::test]
+    fn end_dispute() {
+        let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
+        set_caller::<DefaultEnvironment>(accounts.alice);
+
+        let mut dispute = Dispute::create(1, "".into(), accounts.bob, 15);
+        let result = dispute.end_dispute(DisputeResult::Owner);
+        assert_eq!(result, Err(BrightDisputesError::InvalidDisputeState));
+
+        // Force "Voting" state
+        dispute.dispute_round = Some(DisputeRoundFake::voting(0u64));
+        dispute.state = State::Running;
+
+        // Charlie vote against Owner
+        let mut charlie = Jure::create(accounts.charlie);
+        dispute
+            .assign_jure(&mut charlie)
+            .expect("Unable to add jure!");
+        dispute
+            .vote(Vote::create(accounts.charlie, 1))
+            .expect("Failed to vote!");
+
+        // Eve vote against Defendant
+        let mut eve = Jure::create(accounts.eve);
+        dispute.assign_jure(&mut eve).expect("Unable to add jure!");
+        dispute
+            .vote(Vote::create(accounts.eve, 0))
+            .expect("Failed to vote!");
+
+        let result = dispute.end_dispute(DisputeResult::Owner);
+        assert_eq!(result, Ok(()));
+
+        assert_eq!(dispute.banned().len(), 1);
+        assert_eq!(dispute.banned()[0], accounts.eve);
+    }
+
+    #[ink::test]
+    fn close_dispute() {
+        let mut dispute = default_test_running_dispute();
+
+        let result = dispute.close_dispute();
+        assert_eq!(result, Err(BrightDisputesError::InvalidDisputeState));
+
+        dispute.state = State::Ended;
+
+        let result = dispute.close_dispute();
+        assert_eq!(result, Ok(()));
+    }
+
+    #[ink::test]
+    fn assert_owner_call() {
+        let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
+        set_caller::<DefaultEnvironment>(accounts.alice);
+        let dispute = Dispute::create(1, "".into(), accounts.bob, 15);
+
+        set_caller::<DefaultEnvironment>(accounts.bob);
+        let result = dispute.assert_owner_call();
+        assert_eq!(result, Err(BrightDisputesError::NotAuthorized));
+
+        set_caller::<DefaultEnvironment>(accounts.alice);
+        let result = dispute.assert_owner_call();
+        assert_eq!(result, Ok(()));
+    }
+
+    #[ink::test]
+    fn assert_dispute_ended() {
+        let mut dispute = default_test_running_dispute();
+
+        let result = dispute.assert_dispute_ended();
+        assert_eq!(result, Err(BrightDisputesError::InvalidDisputeState));
+
+        dispute.dispute_round_counter = Dispute::MAX_DISPUTE_ROUNDS;
+        let result = dispute.assert_dispute_ended();
+        assert_eq!(result, Ok(()));
+
+        dispute.dispute_round_counter = 0u8;
+        dispute.state = State::Ended;
+        let result = dispute.assert_dispute_ended();
+        assert_eq!(result, Ok(()));
+    }
+
+    #[ink::test]
+    fn assert_dispute_remove() {
+        let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
+        set_caller::<DefaultEnvironment>(accounts.alice);
+        let mut dispute = Dispute::create(1, "".into(), accounts.bob, 15);
+
+        let result = dispute.assert_dispute_remove();
+        assert_eq!(result, Ok(()));
+
+        dispute.state = State::Running;
+        let result = dispute.assert_dispute_remove();
+        assert_eq!(result, Err(BrightDisputesError::InvalidDisputeState));
+
+        dispute.state = State::Ended;
+        let result = dispute.assert_dispute_remove();
+        assert_eq!(result, Err(BrightDisputesError::InvalidDisputeState));
+
+        dispute.state = State::Closed;
+        let result = dispute.assert_dispute_remove();
+        assert_eq!(result, Ok(()));
     }
 }

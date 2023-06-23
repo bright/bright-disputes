@@ -3,7 +3,8 @@
 
 mod contract;
 mod dispute;
+mod dispute_round;
 mod error;
-mod types;
 mod jure;
+mod types;
 mod vote;
