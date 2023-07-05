@@ -38,6 +38,6 @@ pub async fn create_new_connections(num_of_new_connections: u8) -> Result<Vec<Si
     Ok(connections)
 }
 
-fn alephs(n: u128) -> aleph_client::Balance {
+pub fn alephs(n: u128) -> aleph_client::Balance {
     n * 1_000_000_000_000
 }

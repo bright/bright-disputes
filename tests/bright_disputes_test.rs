@@ -6,7 +6,7 @@ use rand::RngCore as _;
 use crate::{
     bright_disputes,
     bright_disputes::{DisputeResult, DisputeState, RoundState},
-    helpers::{create_new_connection, create_new_connections},
+    helpers::{alephs, create_new_connection, create_new_connections},
 };
 
 async fn connect_and_deploy() -> Result<(SignedConnection, bright_disputes::Instance)> {
@@ -29,7 +29,7 @@ async fn test_dispute_success() -> Result<()> {
 
     // Create a dispute
     contract
-        .create_dispute(&owner_conn, "".into(), defendant, 10)
+        .create_dispute(&owner_conn, "".into(), defendant, alephs(0))
         .await?;
     let dispute_id = contract.get_last_dispute_id(&owner_conn).await??;
     assert!(dispute_id == 1u32);
@@ -80,7 +80,7 @@ async fn test_dispute_success() -> Result<()> {
             .confirm_jure_participation_in_dispute(conn, dispute_id)
             .await?;
     }
-    
+
     // Confirm judge participation
     contract
         .confirm_judge_participation_in_dispute(judge_conn, dispute_id)
@@ -128,7 +128,7 @@ async fn test_dispute_rounds() -> Result<()> {
 
     // Create a dispute
     contract
-        .create_dispute(&owner_conn, "".into(), defendant, 10)
+        .create_dispute(&owner_conn, "".into(), defendant, alephs(0))
         .await?;
     let dispute_id = contract.get_last_dispute_id(&owner_conn).await??;
     assert!(dispute_id == 1u32);
