@@ -12,7 +12,7 @@ use crate::{
     feature = "std",
     derive(ink::storage::traits::StorageLayout, scale_info::TypeInfo)
 )]
-pub enum State {
+pub enum RoundState {
     AssignJuriesAndJudge,
     PickingJuriesAndJudge,
     Voting,
@@ -25,7 +25,7 @@ pub enum State {
     derive(ink::storage::traits::StorageLayout, scale_info::TypeInfo)
 )]
 pub struct DisputeRound {
-    state: State,
+    state: RoundState,
     number_of_juries: u8,
     state_deadline: Timestamp,
 }
@@ -40,7 +40,7 @@ impl DisputeRound {
     /// Creates new dispute round.
     pub fn create(timestamp: Timestamp, number_of_juries: Option<u8>) -> Self {
         DisputeRound {
-            state: State::AssignJuriesAndJudge,
+            state: RoundState::AssignJuriesAndJudge,
             number_of_juries: number_of_juries.unwrap_or(DisputeRound::INITIAL_NUMBER_OF_JURIES),
             state_deadline: Self::deadline(timestamp, Self::ASSIGN_JURIES_AND_JUDGE_TIME),
         }
@@ -66,7 +66,7 @@ impl DisputeRound {
 
     // Assert when state is not in "Voting" state.
     pub fn assert_if_not_voting_time(&self) -> Result<()> {
-        if self.state != State::Voting {
+        if self.state != RoundState::Voting {
             return Err(BrightDisputesError::WrongDisputeRoundState);
         }
         Ok(())
@@ -79,14 +79,14 @@ impl DisputeRound {
         now: Timestamp,
     ) -> Result<()> {
         match self.state {
-            State::AssignJuriesAndJudge => {
+            RoundState::AssignJuriesAndJudge => {
                 self.handle_assigning_the_juries(contract, dispute)?;
                 self.handle_assigning_judge(contract, dispute)?;
 
-                self.state = State::PickingJuriesAndJudge;
+                self.state = RoundState::PickingJuriesAndJudge;
                 self.state_deadline = Self::deadline(now, Self::PICKING_JURIES_AND_JUDGE_TIME);
             }
-            State::PickingJuriesAndJudge => {
+            RoundState::PickingJuriesAndJudge => {
                 self.handle_picking_the_juries(contract, dispute)?;
                 self.handle_picking_the_judge(contract, dispute)?;
 
@@ -97,11 +97,11 @@ impl DisputeRound {
                     contract.update_jure(jure);
                 }
 
-                self.state = State::Voting;
+                self.state = RoundState::Voting;
                 self.state_deadline = Self::deadline(now, Self::VOTING_TIME);
             }
-            State::Voting => self.handle_voting(contract, dispute, now)?,
-            State::CountingTheVotes => self.handle_votes_counting(contract, dispute)?,
+            RoundState::Voting => self.handle_voting(contract, dispute, now)?,
+            RoundState::CountingTheVotes => self.handle_votes_counting(contract, dispute)?,
         };
         Ok(())
     }
@@ -112,20 +112,19 @@ impl DisputeRound {
         dispute: &mut Dispute,
     ) -> Result<()> {
         dispute.assert_owner_call()?;
-        if self.state != State::AssignJuriesAndJudge {
+        if self.state != RoundState::AssignJuriesAndJudge {
             return Err(BrightDisputesError::WrongDisputeRoundState);
         }
 
+        let extend_juries_by = self.number_of_juries - dispute.juries().len() as u8;
         let mut banned_accounts = dispute.banned();
         banned_accounts.extend([dispute.owner(), dispute.defendant()].to_vec());
         let juries_ids = contract
-            .remove_random_juries_from_pool_or_assert(&banned_accounts, self.number_of_juries)?;
+            .remove_random_juries_from_pool_or_assert(&banned_accounts, extend_juries_by)?;
 
-        let mut juries: Vec<AccountId> = Vec::new();
         for jure_id in juries_ids {
             let mut jure = contract.get_jure_or_assert(jure_id)?;
             dispute.assign_jure(&mut jure)?;
-            juries.push(jure_id);
             contract.update_jure(jure);
         }
 
@@ -138,7 +137,7 @@ impl DisputeRound {
         dispute: &mut Dispute,
     ) -> Result<()> {
         dispute.assert_owner_call()?;
-        if self.state != State::AssignJuriesAndJudge {
+        if self.state != RoundState::AssignJuriesAndJudge {
             return Err(BrightDisputesError::WrongDisputeRoundState);
         } else if dispute.judge().is_none() {
             let mut banned_accounts = dispute.banned();
@@ -159,7 +158,7 @@ impl DisputeRound {
         dispute: &Dispute,
     ) -> Result<()> {
         dispute.assert_owner_call()?;
-        if self.state != State::PickingJuriesAndJudge {
+        if self.state != RoundState::PickingJuriesAndJudge {
             return Err(BrightDisputesError::WrongDisputeRoundState);
         } else if dispute.juries().is_empty() {
             return Err(BrightDisputesError::CanNotSwitchDisputeRound);
@@ -181,7 +180,7 @@ impl DisputeRound {
         dispute: &Dispute,
     ) -> Result<()> {
         dispute.assert_owner_call()?;
-        if self.state != State::PickingJuriesAndJudge {
+        if self.state != RoundState::PickingJuriesAndJudge {
             return Err(BrightDisputesError::WrongDisputeRoundState);
         } else if dispute.judge().is_none() {
             return Err(BrightDisputesError::CanNotSwitchDisputeRound);
@@ -201,7 +200,7 @@ impl DisputeRound {
         timestamp: Timestamp,
     ) -> Result<()> {
         dispute.assert_owner_call()?;
-        if self.state != State::Voting {
+        if self.state != RoundState::Voting {
             return Err(BrightDisputesError::WrongDisputeRoundState);
         } else if dispute.votes().is_empty() {
             return Err(BrightDisputesError::JuriesNotVoted(dispute.juries()));
@@ -218,7 +217,7 @@ impl DisputeRound {
         judge.request_for_action(dispute.id())?;
         contract.update_jure(judge);
 
-        self.state = State::CountingTheVotes;
+        self.state = RoundState::CountingTheVotes;
         self.state_deadline = Self::deadline(timestamp, Self::VOTING_COUNTING);
 
         Ok(())
@@ -229,11 +228,10 @@ impl DisputeRound {
         contract: &mut dyn JuriesMap,
         dispute: &mut Dispute,
     ) -> Result<()> {
-        if self.state != State::CountingTheVotes {
+        if self.state != RoundState::CountingTheVotes {
             return Err(BrightDisputesError::WrongDisputeRoundState);
         }
-
-        let result = dispute.count_votes()?;
+        dispute.assert_judge()?;
 
         // Mark judge work as done.
         let judge_id = dispute.judge().unwrap();
@@ -241,7 +239,9 @@ impl DisputeRound {
         judge.action_done(dispute.id())?;
         contract.update_jure(judge);
 
+        let result = dispute.count_votes()?;
         dispute.end_dispute(result)?;
+
         Ok(())
     }
 
@@ -259,8 +259,8 @@ pub mod mock {
     impl DisputeRoundFake {
         pub fn voting(state_deadline: Timestamp) -> DisputeRound {
             DisputeRound {
-                state: State::Voting,
-                number_of_juries: 3,
+                state: RoundState::Voting,
+                number_of_juries: DisputeRound::INITIAL_NUMBER_OF_JURIES,
                 state_deadline,
             }
         }
@@ -282,7 +282,7 @@ mod tests {
     #[ink::test]
     fn create_dispute_round() {
         let round = DisputeRound::create(0u64, None);
-        assert_eq!(round.state, State::AssignJuriesAndJudge);
+        assert_eq!(round.state, RoundState::AssignJuriesAndJudge);
     }
 
     #[ink::test]
@@ -339,7 +339,7 @@ mod tests {
         set_caller::<DefaultEnvironment>(accounts.alice);
         let result = round.process_dispute_round(&mut juries, &mut dispute, start_timestamp);
         assert_eq!(result, Ok(()));
-        assert_eq!(round.state, State::PickingJuriesAndJudge);
+        assert_eq!(round.state, RoundState::PickingJuriesAndJudge);
     }
 
     #[ink::test]
@@ -392,7 +392,7 @@ mod tests {
         set_caller::<DefaultEnvironment>(accounts.alice);
         let result = round.process_dispute_round(&mut juries, &mut dispute, start_timestamp);
         assert_eq!(result, Ok(()));
-        assert_eq!(round.state, State::Voting);
+        assert_eq!(round.state, RoundState::Voting);
     }
 
     #[ink::test]
@@ -453,7 +453,7 @@ mod tests {
             result,
             Err(BrightDisputesError::JuriesNotVoted(dispute.juries()))
         );
-        assert_eq!(round.state, State::Voting);
+        assert_eq!(round.state, RoundState::Voting);
 
         // Before voting, we need to update dispute round
         dispute.set_dispute_round(round.clone());
@@ -469,7 +469,7 @@ mod tests {
         set_caller::<DefaultEnvironment>(accounts.alice);
         let result = round.process_dispute_round(&mut juries, &mut dispute, start_timestamp);
         assert_eq!(result, Ok(()));
-        assert_eq!(round.state, State::CountingTheVotes);
+        assert_eq!(round.state, RoundState::CountingTheVotes);
     }
 
     #[ink::test]
@@ -634,7 +634,7 @@ mod tests {
         assert_eq!(result, Err(BrightDisputesError::WrongDisputeRoundState));
 
         // Force Voting state
-        round.state = State::Voting;
+        round.state = RoundState::Voting;
 
         let result = round.assert_if_not_voting_time();
         assert_eq!(result, Ok(()));

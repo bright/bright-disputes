@@ -1,0 +1,22 @@
+[package]
+name = "bright_disputes"
+version = "0.1.0"
+authors = ["Michal Gralinski michal.gralinski@brightinventions.pl"]
+edition = "2021"
+license = "MIT"
+
+[lib]
+path = "lib.rs"
+
+[dependencies]
+ink-wrapper-types = "0.4.0"
+scale = { package = "parity-scale-codec", version = "3", default-features = false, features = ["derive"] }
+ink_primitives = "4.0.1"
+aleph_client = "3.0.0"
+async-trait = "0.1.68"
+
+# These are a couple dependencies we will use to write our tests
+tokio = { version = "1.25.0", features = ["macros"] }
+rand = "0.8.5"
+anyhow = "1.0.71"
+once_cell = "1.17.1"

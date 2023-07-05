@@ -41,6 +41,7 @@ pub mod bright_disputes {
 
     /// Main contract storage
     #[ink(storage)]
+    #[derive(Default)]
     pub struct BrightDisputes {
         last_dispute_id: DisputeId,
         juries_pool: Vec<AccountId>,
@@ -83,6 +84,12 @@ pub mod bright_disputes {
                 juries: Mapping::default(),
                 disputes: Mapping::default(),
             }
+        }
+
+        /// Get last dispute id
+        #[ink(message)]
+        pub fn get_last_dispute_id(&self) -> DisputeId {
+            self.last_dispute_id
         }
 
         /// Get single dispute by id
@@ -193,6 +200,7 @@ pub mod bright_disputes {
             let mut jure = self.get_jure_or_assert(caller)?;
             dispute.vote(Vote::create(caller, vote))?;
             jure.action_done(dispute.id())?;
+            self.update_jure(jure);
             self.update_dispute(dispute);
             Ok(())
         }
@@ -278,10 +286,10 @@ pub mod bright_disputes {
                         }
 
                         // Check if juries votes
-                        for judge_id in dispute.juries() {
-                            let judge = self.get_jure_or_assert(judge_id)?;
-                            if judge.is_requested_for_action(dispute_id) {
-                                dispute.move_to_banned(judge_id)?;
+                        for jure_id in dispute.juries() {
+                            let jure = self.get_jure_or_assert(jure_id)?;
+                            if jure.is_requested_for_action(dispute_id) {
+                                dispute.move_to_banned(jure_id)?;
                             }
                         }
 
@@ -291,10 +299,10 @@ pub mod bright_disputes {
 
                     BrightDisputesError::MajorityOfVotesNotReached => {
                         // Check if juries votes
-                        for judge_id in dispute.juries() {
-                            let judge = self.get_jure_or_assert(judge_id)?;
-                            if judge.is_requested_for_action(dispute_id) {
-                                dispute.move_to_banned(judge_id)?;
+                        for jure_id in dispute.juries() {
+                            let jure = self.get_jure_or_assert(jure_id)?;
+                            if jure.is_requested_for_action(dispute_id) {
+                                dispute.move_to_banned(jure_id)?;
                             }
                         }
 
