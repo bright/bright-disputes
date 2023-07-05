@@ -9,6 +9,7 @@ pub enum BrightDisputesError {
     NotAuthorized,
     InvalidDisputeState,
     InvalidAction,
+    InvalidEscrowAmount,
 
     JureAlreadyVoted,
     JureAlreadyAdded,

@@ -4,8 +4,8 @@ use scale::Encode as _;
 
 #[allow(dead_code)]
 pub const CODE_HASH: [u8; 32] = [
-    60, 75, 158, 148, 77, 75, 179, 135, 170, 224, 43, 109, 89, 129, 53, 230, 24, 241, 3, 222, 76,
-    185, 154, 22, 106, 57, 124, 73, 78, 217, 57, 70,
+    206, 40, 233, 94, 177, 91, 101, 22, 171, 11, 5, 89, 43, 242, 9, 87, 188, 185, 138, 211, 4, 63,
+    59, 135, 90, 206, 90, 4, 10, 167, 122, 113,
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, scale::Encode, scale::Decode)]
@@ -68,6 +68,7 @@ pub enum BrightDisputesError {
     NotAuthorized(),
     InvalidDisputeState(),
     InvalidAction(),
+    InvalidEscrowAmount(),
     JureAlreadyVoted(),
     JureAlreadyAdded(),
     JureAlreadyRegistered(),

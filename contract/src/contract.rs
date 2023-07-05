@@ -126,12 +126,11 @@ pub mod bright_disputes {
             defendant_id: AccountId,
             escrow: Balance,
         ) -> Result<DisputeId> {
+            self.assert_transferred(escrow)?;
             let owner_id = ink::env::caller::<ink::env::DefaultEnvironment>();
             self.last_dispute_id = self.generate_dispute_id()?;
             let dispute = Dispute::create(self.last_dispute_id, owner_link, defendant_id, escrow);
             self.update_dispute(dispute);
-
-            self.env().transfer(self.env().account_id(), escrow)?;
 
             self.env().emit_event(DisputeRaised {
                 id: self.last_dispute_id,
@@ -143,7 +142,7 @@ pub mod bright_disputes {
         }
 
         /// Defendant confirms his participation in dispute.
-        #[ink(message)]
+        #[ink(message, payable)]
         pub fn confirm_defendant(
             &mut self,
             dispute_id: DisputeId,
@@ -151,10 +150,9 @@ pub mod bright_disputes {
         ) -> Result<()> {
             let mut dispute = self.get_dispute_or_assert(dispute_id)?;
             let id = dispute.id();
+            self.assert_transferred(dispute.escrow())?;
             dispute.confirm_defendant(defendant_link)?;
             dispute.set_dispute_round(DisputeRound::create(self.env().block_timestamp(), None));
-            self.env()
-                .transfer(self.env().account_id(), dispute.escrow())?;
             dispute.increment_deposit();
             self.update_dispute(dispute);
 
@@ -230,18 +228,17 @@ pub mod bright_disputes {
         }
 
         /// Assigned jure can confirm his participation in dispute
-        #[ink(message)]
+        #[ink(message, payable)]
         pub fn confirm_jure_participation_in_dispute(
             &mut self,
             dispute_id: DisputeId,
         ) -> Result<()> {
             let mut dispute = self.get_dispute_or_assert(dispute_id)?;
+            self.assert_transferred(dispute.escrow())?;
 
             let caller = ink::env::caller::<ink::env::DefaultEnvironment>();
             let mut jure = self.get_jure_or_assert(caller)?;
             jure.confirm_participation_in_dispute(dispute_id)?;
-            self.env()
-                .transfer(self.env().account_id(), dispute.escrow())?;
             self.update_jure(jure);
 
             dispute.increment_deposit();
@@ -250,18 +247,17 @@ pub mod bright_disputes {
         }
 
         /// Judge can confirm his participation in dispute
-        #[ink(message)]
+        #[ink(message, payable)]
         pub fn confirm_judge_participation_in_dispute(
             &mut self,
             dispute_id: DisputeId,
         ) -> Result<()> {
             let mut dispute = self.get_dispute_or_assert(dispute_id)?;
+            self.assert_transferred(dispute.escrow())?;
 
             let caller = ink::env::caller::<ink::env::DefaultEnvironment>();
             let mut jure = self.get_jure_or_assert(caller)?;
             jure.confirm_participation_in_dispute(dispute_id)?;
-            self.env()
-                .transfer(self.env().account_id(), dispute.escrow())?;
             self.update_jure(jure);
 
             dispute.increment_deposit();
@@ -428,17 +424,30 @@ pub mod bright_disputes {
             }
             return Ok(());
         }
+
+        fn assert_transferred(&self, expected_amount: Balance) -> Result<()> {
+            let transferred = self.env().transferred_value();
+            if transferred != expected_amount {
+                return Err(BrightDisputesError::InvalidEscrowAmount);
+            }
+            Ok(())
+        }
     }
 
     #[cfg(test)]
     mod tests {
-        use ink::env::{test::set_caller, DefaultEnvironment};
+        use ink::env::{
+            test::{set_caller, set_value_transferred},
+            DefaultEnvironment,
+        };
 
         use super::*;
 
         fn create_test_bright_dispute_with_running_dispute() -> BrightDisputes {
             let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
             let mut bright_disputes = BrightDisputes::new();
+
+            set_value_transferred::<DefaultEnvironment>(10);
 
             // Alice creates a dispute
             let dispute_id = bright_disputes
@@ -488,9 +497,16 @@ pub mod bright_disputes {
             let owner_link = "https://brightinventions.pl/";
             let escrow_amount: Balance = 15;
             set_caller::<DefaultEnvironment>(accounts.alice);
+            set_value_transferred::<DefaultEnvironment>(escrow_amount);
+
             let result =
                 bright_disputes.create_dispute(owner_link.into(), accounts.bob, escrow_amount);
             assert_eq!(result, Ok(1));
+
+            // Failed, escrow amount doesn't match the transferred value.
+            let result =
+                bright_disputes.create_dispute(owner_link.into(), accounts.bob, escrow_amount + 1);
+            assert_eq!(result, Err(BrightDisputesError::InvalidEscrowAmount));
         }
 
         /// Test if we can create multiple disputes.
@@ -500,6 +516,7 @@ pub mod bright_disputes {
 
             let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
             set_caller::<DefaultEnvironment>(accounts.alice);
+            set_value_transferred::<DefaultEnvironment>(10);
 
             // Alice creates first dispute
             let result = bright_disputes.create_dispute(
@@ -527,6 +544,8 @@ pub mod bright_disputes {
             let result = bright_disputes.get_dispute(1);
             assert_eq!(result, Err(BrightDisputesError::DisputeNotExist));
 
+            set_value_transferred::<DefaultEnvironment>(10);
+
             bright_disputes
                 .create_dispute("https://brightinventions.pl/1".into(), accounts.bob, 10)
                 .expect("Failed to create a dispute!");
@@ -541,6 +560,8 @@ pub mod bright_disputes {
         fn get_all_dispute() {
             let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
             let mut bright_disputes = BrightDisputes::new();
+
+            set_value_transferred::<DefaultEnvironment>(10);
 
             bright_disputes
                 .create_dispute("https://brightinventions.pl/1".into(), accounts.bob, 10)
@@ -573,6 +594,7 @@ pub mod bright_disputes {
             assert_eq!(result, Err(BrightDisputesError::DisputeNotExist));
 
             // Create dispute
+            set_value_transferred::<DefaultEnvironment>(10);
             bright_disputes
                 .create_dispute("https://brightinventions.pl".into(), accounts.bob, 10)
                 .expect("Failed to create a dispute!");
@@ -616,6 +638,7 @@ pub mod bright_disputes {
             let result = bright_disputes.confirm_defendant(1, defendant_link.into());
             assert_eq!(result, Err(BrightDisputesError::DisputeNotExist));
 
+            set_value_transferred::<DefaultEnvironment>(10);
             let dispute_id = bright_disputes
                 .create_dispute("".into(), accounts.bob, 10)
                 .expect("Failed to create a dispute!");
@@ -671,6 +694,7 @@ pub mod bright_disputes {
         fn update_defendant_description() {
             let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
             set_caller::<DefaultEnvironment>(accounts.alice);
+            set_value_transferred::<DefaultEnvironment>(10);
 
             let mut bright_disputes = BrightDisputes::new();
 
@@ -766,6 +790,7 @@ pub mod bright_disputes {
 
             // Switch to "PickingJuriesAndJudge" state.
             set_caller::<DefaultEnvironment>(accounts.alice);
+            set_value_transferred::<DefaultEnvironment>(10);
             bright_disputes
                 .process_dispute_round(dispute_id)
                 .expect("Failed to process dispute round!");
@@ -776,14 +801,31 @@ pub mod bright_disputes {
 
             let judge = dispute.judge().expect("Judge was not assigned!");
 
-            // Success
+            // Fail to confirm judge, invalid escrow
             set_caller::<DefaultEnvironment>(judge);
+            set_value_transferred::<DefaultEnvironment>(5);
+            let result = bright_disputes.confirm_judge_participation_in_dispute(dispute_id);
+            assert_eq!(result, Err(BrightDisputesError::InvalidEscrowAmount));
+
+            // Success, confirm judge
+            set_caller::<DefaultEnvironment>(judge);
+            set_value_transferred::<DefaultEnvironment>(10);
             let result = bright_disputes.confirm_judge_participation_in_dispute(dispute_id);
             assert_eq!(result, Ok(()));
 
-            // Success
+            // Confirm juries
             for jure in &dispute.juries() {
                 set_caller::<DefaultEnvironment>(*jure);
+
+                // Fail to confirm jure, invalid escrow
+                set_value_transferred::<DefaultEnvironment>(5);
+                assert_eq!(
+                    bright_disputes.confirm_jure_participation_in_dispute(dispute_id),
+                    Err(BrightDisputesError::InvalidEscrowAmount)
+                );
+
+                // Success
+                set_value_transferred::<DefaultEnvironment>(10);
                 assert_eq!(
                     bright_disputes.confirm_jure_participation_in_dispute(dispute_id),
                     Ok(())
