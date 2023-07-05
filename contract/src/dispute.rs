@@ -18,7 +18,7 @@ use crate::{
     feature = "std",
     derive(ink::storage::traits::StorageLayout, scale_info::TypeInfo)
 )]
-pub enum State {
+pub enum DisputeState {
     Created,
     Running,
     Ended,
@@ -51,7 +51,7 @@ impl DisputeResult {
 )]
 pub struct Dispute {
     id: DisputeId,
-    state: State,
+    state: DisputeState,
     owner: AccountId,
     owner_link: String,
     escrow: Balance,
@@ -73,6 +73,7 @@ impl Dispute {
     const MAX_DISPUTE_ROUNDS: u8 = 3u8;
     const WINING_MAJORITY: usize = 75;
     const LOSING_MAJORITY: usize = 100 - Dispute::WINING_MAJORITY;
+    const INCREMENT_JURIES_BY: u8 = 2;
 
     /// Creates a new dispute
     pub fn create(
@@ -83,7 +84,7 @@ impl Dispute {
     ) -> Self {
         Dispute {
             id,
-            state: State::Created,
+            state: DisputeState::Created,
             owner: ink::env::caller::<ink::env::DefaultEnvironment>(),
             owner_link,
             escrow,
@@ -186,8 +187,12 @@ impl Dispute {
 
     /// End the dispute and publish result.
     pub fn end_dispute(&mut self, result: DisputeResult) -> Result<()> {
-        self.assert_state(State::Running)?;
-        self.state = State::Ended;
+        self.assert_state(DisputeState::Running)?;
+        if self.dispute_result.is_some() {
+            return Err(BrightDisputesError::InvalidAction);
+        }
+
+        self.state = DisputeState::Ended;
         self.dispute_result = Some(result.clone());
         self.dispute_round = None;
 
@@ -202,23 +207,23 @@ impl Dispute {
 
     /// Close the dispute.
     pub fn close_dispute(&mut self) -> Result<()> {
-        self.assert_state(State::Ended)?;
-        self.state = State::Closed;
+        self.assert_state(DisputeState::Ended)?;
+        self.state = DisputeState::Closed;
         Ok(())
     }
 
     /// Confirm defendant participation in dispute
     pub fn confirm_defendant(&mut self, defendant_link: String) -> Result<()> {
         self.assert_defendant_call()?;
-        self.assert_state(State::Created)?;
+        self.assert_state(DisputeState::Created)?;
         self.defendant_link = Some(defendant_link);
-        self.state = State::Running;
+        self.state = DisputeState::Running;
         Ok(())
     }
 
     /// Make a vote
     pub fn vote(&mut self, vote: Vote) -> Result<()> {
-        self.assert_state(State::Running)?;
+        self.assert_state(DisputeState::Running)?;
         self.assert_can_vote()?;
         self.assert_jure(vote.jure())?;
         self.assert_not_voted(vote.jure())?;
@@ -228,7 +233,7 @@ impl Dispute {
 
     /// Count the votes and return the result.
     pub fn count_votes(&self) -> Result<DisputeResult> {
-        self.assert_state(State::Running)?;
+        self.assert_state(DisputeState::Running)?;
         self.assert_judge()?;
 
         let total_votes = self.votes.len();
@@ -255,7 +260,7 @@ impl Dispute {
 
     /// Assign jure to the dispute
     pub fn assign_jure(&mut self, jure: &mut Jure) -> Result<()> {
-        self.assert_state(State::Running)?;
+        self.assert_state(DisputeState::Running)?;
         self.assert_not_jure(jure.id())?;
         self.assert_not_owner_call(jure.id())?;
         self.assert_not_defendant_call(jure.id())?;
@@ -266,7 +271,7 @@ impl Dispute {
 
     /// Assign judge to the dispute
     pub fn assign_judge(&mut self, judge: &mut Jure) -> Result<()> {
-        self.assert_state(State::Running)?;
+        self.assert_state(DisputeState::Running)?;
         self.assert_not_owner_call(judge.id())?;
         self.assert_not_defendant_call(judge.id())?;
         if self.judge.is_some() {
@@ -296,7 +301,7 @@ impl Dispute {
 
     /// Handle dispute round deadline
     pub fn on_dispute_round_deadline(&mut self, timestamp: Timestamp) -> Result<()> {
-        self.assert_state(State::Running)?;
+        self.assert_state(DisputeState::Running)?;
 
         // Clear votes.
         self.votes.clear();
@@ -308,7 +313,7 @@ impl Dispute {
 
     /// Start new dispute round
     pub fn next_dispute_round(&mut self, timestamp: Timestamp) -> Result<()> {
-        self.assert_state(State::Running)?;
+        self.assert_state(DisputeState::Running)?;
         if self.dispute_round_counter >= Dispute::MAX_DISPUTE_ROUNDS {
             return Err(BrightDisputesError::DisputeRoundLimitReached);
         }
@@ -317,7 +322,7 @@ impl Dispute {
         self.votes.clear();
 
         // Increase the number of juries for the next round.
-        let number_of_juries: u8 = self.juries.len() as u8 + 2u8;
+        let number_of_juries: u8 = self.juries.len() as u8 + Dispute::INCREMENT_JURIES_BY;
 
         // Set new dispute round
         self.dispute_round = Some(DisputeRound::create(timestamp, Some(number_of_juries)));
@@ -332,7 +337,7 @@ impl Dispute {
         contract: &mut dyn JuriesMap,
         timestamp: Timestamp,
     ) -> Result<()> {
-        self.assert_state(State::Running)?;
+        self.assert_state(DisputeState::Running)?;
         if let Some(mut round) = self.dispute_round.clone() {
             round.process_dispute_round(contract, self, timestamp)?;
             self.dispute_round = Some(round);
@@ -370,9 +375,21 @@ impl Dispute {
         Ok(())
     }
 
+    /// Assert if call is done not by the judge
+    pub fn assert_judge(&self) -> Result<()> {
+        if let Some(judge) = self.judge {
+            if judge == ink::env::caller::<ink::env::DefaultEnvironment>() {
+                return Ok(());
+            }
+        }
+        return Err(BrightDisputesError::NotAuthorized);
+    }
+
     /// Assert if dispute is not ended.
     pub fn assert_dispute_ended(&self) -> Result<()> {
-        if self.state != State::Ended && self.dispute_round_counter < Dispute::MAX_DISPUTE_ROUNDS {
+        if self.state != DisputeState::Ended
+            && self.dispute_round_counter < Dispute::MAX_DISPUTE_ROUNDS
+        {
             return Err(BrightDisputesError::InvalidDisputeState);
         }
         Ok(())
@@ -380,7 +397,7 @@ impl Dispute {
 
     /// Assert if dispute can not be removed.
     pub fn assert_dispute_remove(&self) -> Result<()> {
-        if self.state == State::Created || self.state == State::Closed {
+        if self.state == DisputeState::Created || self.state == DisputeState::Closed {
             return Ok(());
         }
         return Err(BrightDisputesError::InvalidDisputeState);
@@ -407,7 +424,7 @@ impl Dispute {
         Ok(())
     }
 
-    fn assert_state(&self, state: State) -> Result<()> {
+    fn assert_state(&self, state: DisputeState) -> Result<()> {
         if self.state != state {
             return Err(BrightDisputesError::InvalidDisputeState);
         }
@@ -430,15 +447,6 @@ impl Dispute {
             }
         }
         return Ok(());
-    }
-
-    fn assert_judge(&self) -> Result<()> {
-        if let Some(judge) = self.judge {
-            if judge == ink::env::caller::<ink::env::DefaultEnvironment>() {
-                return Ok(());
-            }
-        }
-        return Err(BrightDisputesError::NotAuthorized);
     }
 
     fn assert_not_voted(&self, jure: AccountId) -> Result<()> {
@@ -477,7 +485,7 @@ mod tests {
             accounts.bob,
             escrow_amount,
         );
-        dispute.state = State::Running;
+        dispute.state = DisputeState::Running;
         dispute
     }
 
@@ -496,7 +504,7 @@ mod tests {
         let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
 
         assert_eq!(dispute.id, 1);
-        assert_eq!(dispute.state, State::Created);
+        assert_eq!(dispute.state, DisputeState::Created);
         assert_eq!(dispute.owner, accounts.alice);
         assert_eq!(dispute.owner_link, "https://brightinventions.pl/owner");
         assert_eq!(dispute.escrow, 15);
@@ -947,7 +955,7 @@ mod tests {
 
         // Force "Voting" state
         dispute.dispute_round = Some(DisputeRoundFake::voting(0u64));
-        dispute.state = State::Running;
+        dispute.state = DisputeState::Running;
 
         // Charlie vote against Owner
         let mut charlie = Jure::create(accounts.charlie);
@@ -979,7 +987,7 @@ mod tests {
         let result = dispute.close_dispute();
         assert_eq!(result, Err(BrightDisputesError::InvalidDisputeState));
 
-        dispute.state = State::Ended;
+        dispute.state = DisputeState::Ended;
 
         let result = dispute.close_dispute();
         assert_eq!(result, Ok(()));
@@ -1012,7 +1020,7 @@ mod tests {
         assert_eq!(result, Ok(()));
 
         dispute.dispute_round_counter = 0u8;
-        dispute.state = State::Ended;
+        dispute.state = DisputeState::Ended;
         let result = dispute.assert_dispute_ended();
         assert_eq!(result, Ok(()));
     }
@@ -1026,15 +1034,15 @@ mod tests {
         let result = dispute.assert_dispute_remove();
         assert_eq!(result, Ok(()));
 
-        dispute.state = State::Running;
+        dispute.state = DisputeState::Running;
         let result = dispute.assert_dispute_remove();
         assert_eq!(result, Err(BrightDisputesError::InvalidDisputeState));
 
-        dispute.state = State::Ended;
+        dispute.state = DisputeState::Ended;
         let result = dispute.assert_dispute_remove();
         assert_eq!(result, Err(BrightDisputesError::InvalidDisputeState));
 
-        dispute.state = State::Closed;
+        dispute.state = DisputeState::Closed;
         let result = dispute.assert_dispute_remove();
         assert_eq!(result, Ok(()));
     }

@@ -56,7 +56,8 @@ impl Jure {
     pub fn is_confirmed(&self, dispute_id: DisputeId) -> bool {
         self.dispute_id.is_some()
             && self.dispute_id.unwrap() == dispute_id
-            && self.state == State::Confirmed
+            && self.state != State::Pending
+            && self.state != State::Assigned
     }
 
     pub fn is_requested_for_action(&self, dispute_id: DisputeId) -> bool {
