@@ -1,0 +1,20 @@
+{
+    "encoded": "HlI17Oa/78lxSsFQKPWJXsFze2wo5ga4NMSZrs+KwmYAgAAAAQAAAAgAAADueVw/FJv/w21flUtfxw3b07FygFS/zN+eH52ZTF3+ohejlPIHD15RS3E8HafANIe2uC/nyDp+lBeS6qDsyiMrVxCKLz69XCTREnnQfNffMwUikf0owpYqNy/ga33xFRrLhv2g0zLvXi6C03q+4sVgl0eqk9QKeLzbjJa/qbQT/v7D02vN+xm576ImcWqJsFJpz5UA2BmQw3jit2Q9",
+    "encoding": {
+        "content": [
+            "pkcs8",
+            "sr25519"
+        ],
+        "type": [
+            "scrypt",
+            "xsalsa20-poly1305"
+        ],
+        "version": "3"
+    },
+    "address": "5CSdKZuEYAbaH1nB8rbxqJU5PDtgTtCB5pj4abqQAhimdLU1",
+    "meta": {
+        "name": "Jure7",
+        "tags": [],
+        "whenCreated": 1688628993493
+    }
+}

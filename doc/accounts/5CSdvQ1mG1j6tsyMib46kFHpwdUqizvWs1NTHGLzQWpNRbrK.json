@@ -1,0 +1,20 @@
+{
+    "encoded": "8ul9ioVBEF3vDTNNpeY5NggDOfm/XzVeTIJcB07lRlsAgAAAAQAAAAgAAADzUEasdvLHsHdnpM+ueHCwAcwjWjejsmphYuea4bPpT2bPjFu2DsfqI+XRGq1L8U0kTpHK15zpnne78PpyeZDmpkdn2j2RVbAU+n6OWHdF6cTjgx5KY3fE0qTsKAh0UlktjmBqCWlJQZR4FAlnbqCDUYl9BwOOOUDrjK5heF8OUOOm3JICmcGuG7fj6tIROci5PUHem4CiVH27EN3A",
+    "encoding": {
+        "content": [
+            "pkcs8",
+            "sr25519"
+        ],
+        "type": [
+            "scrypt",
+            "xsalsa20-poly1305"
+        ],
+        "version": "3"
+    },
+    "address": "5CSdvQ1mG1j6tsyMib46kFHpwdUqizvWs1NTHGLzQWpNRbrK",
+    "meta": {
+        "name": "Jure4",
+        "tags": [],
+        "whenCreated": 1688629013135
+    }
+}
