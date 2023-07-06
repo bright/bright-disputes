@@ -1,0 +1,20 @@
+{
+    "encoded": "uxqAFTjx+ofXO6Isgcq8jCdx331e4qIZBAOCTBt3IyoAgAAAAQAAAAgAAAA3MnaY9uRjPL9xDFxEN8Y8wf9lerF8Xz3ZEJMWw7cSi+y+tdI0NgsMHjIh5uWEA73GkHIiJk5+2JL6W+C1CAQi7+OLchowPNO0cwgDMXVB90vfCgo20r4vBRUFeRj0HK5IJylORhuPX/5JdI1/ZLBbEU6SVpBcSys63EnYS4nYBZluLd0Av/4PYtY5sMoS5MCvI/Ol4qKOfGykSn9O",
+    "encoding": {
+        "content": [
+            "pkcs8",
+            "sr25519"
+        ],
+        "type": [
+            "scrypt",
+            "xsalsa20-poly1305"
+        ],
+        "version": "3"
+    },
+    "address": "5ChhBGUJJLxPk2EJzDN6aeuA7yx7bBBGxgZx5iSr9rMhegrM",
+    "meta": {
+        "name": "Owner",
+        "tags": [],
+        "whenCreated": 1688632776424
+    }
+}

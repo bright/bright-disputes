@@ -1,5 +1,5 @@
 # Bright Disputes
-This project is a dApp for raising and solving the disputes on the Substrate-based blockchains.
+This project is a dApp for raising and solving the disputes on the Substrate-based blockchains. Process of building and running smart contract can be found in the sections bellow. Showcase scenario can be found in the [documentation](https://github.com/bright/bright-disputes/blob/main/doc/README.md).
 
 ## Prerequisites
 1. `cargo-contract 2.x`

@@ -1,0 +1,20 @@
+{
+    "encoded": "Dqjm19O3Pcq7i5KL9CqCTqGVBC76VC0mFVkj37wBS64AgAAAAQAAAAgAAABuhHhDwH/CwC/Jkq1ESPuRyPSfg2xNCD12JPGVenkPjBLs/1a51BHsWDFd+Pa4PS/xe0oEFCdsBK6NYYoQC8/oz+pmN+/Hxbx2zhybh0MWW4WF6a51Oi2gajyxW8/+G0EXWZDukcLaeKv+b6g2gdNy5XsAMbzA4MaeCODN7OAdpSqgfOchp29tPPEEY5lzZudcPtd3/tVcDR9iqae9",
+    "encoding": {
+        "content": [
+            "pkcs8",
+            "sr25519"
+        ],
+        "type": [
+            "scrypt",
+            "xsalsa20-poly1305"
+        ],
+        "version": "3"
+    },
+    "address": "5CSvSo9vt1eu4d93EobfA6au8bheGLbkTdvATLb9RPVKgu9b",
+    "meta": {
+        "name": "Jure5",
+        "tags": [],
+        "whenCreated": 1688629387296
+    }
+}

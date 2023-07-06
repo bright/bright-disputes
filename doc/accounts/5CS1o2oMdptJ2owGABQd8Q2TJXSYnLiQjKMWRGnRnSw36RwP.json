@@ -1,0 +1,20 @@
+{
+    "encoded": "6aFQ1aE5cOCO8+sdFx3kKl9j8H7PGkuSx6aht8WJaCsAgAAAAQAAAAgAAADkeKBgSA+TEUtHELRzoDF/TtiQEUuo6KjgjjUoaVOjlQ+uFcO1ypo5zFKalWOL5KRmcJJ/NmC141LzEkNPnFzAc+su+CwPED2B+MHRZDBkPeCNON7/S33ewzvuSXOzbdWGolEJdtihz5cTDeX5tsJP24R5r6scMnrwELIl9yii6hdWTLvFXcdS5OZ58lQudjKgmJc3Yvh4S5uQ8qw9",
+    "encoding": {
+        "content": [
+            "pkcs8",
+            "sr25519"
+        ],
+        "type": [
+            "scrypt",
+            "xsalsa20-poly1305"
+        ],
+        "version": "3"
+    },
+    "address": "5CS1o2oMdptJ2owGABQd8Q2TJXSYnLiQjKMWRGnRnSw36RwP",
+    "meta": {
+        "name": "Jure6",
+        "tags": [],
+        "whenCreated": 1688629403803
+    }
+}

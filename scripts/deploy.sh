@@ -19,6 +19,15 @@ MICHAL=//2
 MICHAL_PUBKEY=5H8rhTXiLiXAe9yhnnQrCuz6bvbwrcTddMJa9KfsX9mi26sj
 ADMIN=//Alice
 ADMIN_PUBKEY=5GrwvaEF5zXb26Fz9rcQpDWS57CtERHpNehXCPcNoHGKutQY
+OWNER_PUBKEY=5ChhBGUJJLxPk2EJzDN6aeuA7yx7bBBGxgZx5iSr9rMhegrM
+DEFENDAT_PUBKEY=5Fhhzf8ZNH2mkP5YddoJ6kj6PfsnB49BxReRopc6CRvqVNrQ
+JURE_1_PUBKEY=5CFysjxm4tWyePnpELf4xG2o3ZvQV5WVdfvcETn552rYA8h9
+JURE_2_PUBKEY=5DfNSomECQZkpJJPi8CnBt3aFSAcbDJHy48xaqBkkAc5vVYJ
+JURE_3_PUBKEY=5CS8L2eS3sbYUcR6b5cvH93DZWiwCGXH4WJzSwTcHmAZekUj
+JURE_4_PUBKEY=5CSdvQ1mG1j6tsyMib46kFHpwdUqizvWs1NTHGLzQWpNRbrK
+JURE_5_PUBKEY=5CSvSo9vt1eu4d93EobfA6au8bheGLbkTdvATLb9RPVKgu9b
+JURE_6_PUBKEY=5CS1o2oMdptJ2owGABQd8Q2TJXSYnLiQjKMWRGnRnSw36RwP
+JUDGE_PUBKEY=5CSdKZuEYAbaH1nB8rbxqJU5PDtgTtCB5pj4abqQAhimdLU1
 
 # tokenomics
 TOKEN_PER_PERSON=1000
@@ -109,11 +118,11 @@ build() {
 }
 
 random_salt() {
-  hexdump -vn16 -e'4/4 "%08X" 1 "\n"' /dev/urandom
+    hexdump -vn16 -e'4/4 "%08X" 1 "\n"' /dev/urandom
 }
 
 contract_instantiate() {
-  docker_ink_dev "cargo contract instantiate --skip-confirm --url ${NODE} --suri ${ADMIN} --output-json --salt 0x$(random_salt) ${1}"
+    docker_ink_dev "cargo contract instantiate --skip-confirm --url ${NODE} --suri ${ADMIN} --output-json --salt 0x$(random_salt) ${1}"
 }
 
 deploy_contract() {
@@ -133,18 +142,19 @@ store_contract_addres() {
 }
 
 transfer() {
-  $DOCKER_SH \
-    --network host \
-    ${CLIAIN_IMAGE} \
-    -c "/usr/local/bin/cliain --node ${NODE} --seed ${ADMIN} transfer --amount-in-tokens ${TOKEN_PER_PERSON} --to-account ${1}" 1>/dev/null
+    $DOCKER_SH \
+        --network host \
+        ${CLIAIN_IMAGE} \
+        -c "/usr/local/bin/cliain --node ${NODE} --seed ${ADMIN} transfer --amount-in-tokens ${TOKEN_PER_PERSON} --to-account ${1}" 1>/dev/null
 
-  log_progress "✅ Transferred ${TOKEN_PER_PERSON} to ${1}"
+    log_progress "✅ Transferred ${TOKEN_PER_PERSON} to ${1}"
 }
 
 prefund_users() {
-  for recipient in "${DAMIAN_PUBKEY}" "${HANS_PUBKEY}" "${MICHAL_PUBKEY}"; do
-    transfer ${recipient}
-  done
+    for recipient in "${DAMIAN_PUBKEY}" "${HANS_PUBKEY}" "${MICHAL_PUBKEY}" "${OWNER_PUBKEY}" "${DEFENDAT_PUBKEY}" "${JURE_1_PUBKEY}" \
+     "${JURE_2_PUBKEY}" "${JURE_3_PUBKEY}" "${JURE_4_PUBKEY}" "${JURE_5_PUBKEY}" "${JURE_6_PUBKEY}" "${JUDGE_PUBKEY}"; do
+        transfer ${recipient}
+    done
 }
 
 # ------------------------------------------------------------------------------------------------------

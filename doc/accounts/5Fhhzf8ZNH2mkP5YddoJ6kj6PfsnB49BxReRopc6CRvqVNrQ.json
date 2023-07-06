@@ -1,0 +1,20 @@
+{
+    "encoded": "B5CTeAPQ+EVPMpK/Jagtcw5SfnCzVIhNWrcFJtWKnckAgAAAAQAAAAgAAACrqsYBavakWM6c/CSRYSNy3TZBgBoJAXeBftH8BRiFR0zBpfMz+2/P94BphyLiPOSQaUcUTCrJULZVdhjxGf2DZZYgSFGCh2E6oLyl3kurpftB51G/ziI+5BoujBjBrwZEt6to+y66CVRyjtemmcbo+dXD/Tj5rV4Bb/K116x3/KHTMkff/vnUYHCkcQx82DJy588vmiRNsEElHt9M",
+    "encoding": {
+        "content": [
+            "pkcs8",
+            "sr25519"
+        ],
+        "type": [
+            "scrypt",
+            "xsalsa20-poly1305"
+        ],
+        "version": "3"
+    },
+    "address": "5Fhhzf8ZNH2mkP5YddoJ6kj6PfsnB49BxReRopc6CRvqVNrQ",
+    "meta": {
+        "name": "Defendant",
+        "tags": [],
+        "whenCreated": 1688632813079
+    }
+}
