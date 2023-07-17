@@ -1,0 +1,31 @@
+[package]
+name = "bright_disputes_cli"
+version = "0.1.0"
+authors = ["Michal Gralinski michal.gralinski@brightinventions.pl"]
+edition = "2021"
+license = "MIT"
+publish = false
+
+[lib]
+name = "bright_disputes"
+path = "src/lib.rs"
+
+[dependencies]
+anyhow = "1.0"
+inquire = "0.6.2"
+clap = { version = "4.0", features = ["derive"] }
+scale = { package = "parity-scale-codec", version = "3", default-features = false, features = ["derive"] }
+serde = { version = "1.0.171", features = ["derive"] }
+serde_json = "1.0.103"
+tokio = { version = "1.24.2", features = ["rt-multi-thread", "macros"] }
+tracing = "0.1.37"
+tracing-subscriber = { version = "0.3.16", features = ["fmt", "json", "env-filter"] }
+
+aleph_client = "3.0.0"
+ink-wrapper-types = "0.5.0"
+ink_primitives = "4.0.1"
+liminal-ark-relations = "0.4.0"
+proc-macro2 = "1.0.66"
+
+[target.nighlty.dependencies]
+proc-macro2 = "1.0.66"

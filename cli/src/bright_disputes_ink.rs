@@ -4,8 +4,8 @@ use scale::Encode as _;
 
 #[allow(dead_code)]
 pub const CODE_HASH: [u8; 32] = [
-    74, 171, 47, 183, 197, 181, 13, 124, 128, 35, 80, 186, 0, 132, 168, 172, 26, 237, 209, 124,
-    143, 150, 217, 23, 239, 111, 34, 83, 70, 21, 47, 9,
+    63, 230, 117, 175, 231, 131, 179, 199, 172, 28, 123, 137, 34, 122, 220, 202, 41, 180, 72, 87,
+    122, 91, 90, 194, 202, 106, 198, 171, 24, 170, 237, 183,
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, scale::Encode, scale::Decode)]
@@ -290,14 +290,14 @@ impl Instance {
     ///  from this pool to participate in disputes.
     #[allow(dead_code, clippy::too_many_arguments)]
     pub fn register_as_an_active_juror(&self) -> ink_wrapper_types::ExecCall {
-        let data = vec![121, 6, 115, 245];
+        let data = vec![80, 47, 210, 239];
         ink_wrapper_types::ExecCall::new(self.account_id, data)
     }
 
     ///  Unregister juror from the active juries pool.
     #[allow(dead_code, clippy::too_many_arguments)]
     pub fn unregister_as_an_active_juror(&self) -> ink_wrapper_types::ExecCall {
-        let data = vec![121, 53, 33, 150];
+        let data = vec![217, 7, 103, 12];
         ink_wrapper_types::ExecCall::new(self.account_id, data)
     }
 
@@ -308,7 +308,7 @@ impl Instance {
         dispute_id: u32,
     ) -> ink_wrapper_types::ExecCallNeedsValue {
         let data = {
-            let mut data = vec![149, 58, 196, 227];
+            let mut data = vec![141, 200, 7, 55];
             dispute_id.encode_to(&mut data);
             data
         };

@@ -29,7 +29,7 @@ This will export *bright_disputes.json*, *bright_disputes.wasm*, *bright_dispute
 ## Build (script)
 The last way to build and run Bright Disputes is to use a script. We simplify the whole process, by providing a `scripts/deploy.sh` script. It will starts aleph node, building and deploying smart contract on it. Script will also pre-fund [accounts](https://github.com/bright/bright-disputes/blob/main/doc/accounts), which can be used to play/test with the smart contract. More details can be found in the [showcase](https://github.com/bright/bright-disputes/blob/main/doc/README.md). Script is using three docker images:
 * disputes-node - is an image of the aleph node, where our smart contract is going to be deployed
-* disputes-cliain - is an image of `cliain` tool, which is a wrapper over `substrate-api-client` library. It simplify calls over Substrate chain extrinsic.
+* disputes-cliain - is a image of `cliain` tool, which is a wrapper over `substrate-api-client` library. It simplify calls over Substrate chain extrinsic.
 * disputes-ink-dev - this image contains environment for building a smart contract
 
 To run a script just type:
