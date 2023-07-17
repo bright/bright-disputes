@@ -4,8 +4,8 @@ use scale::Encode as _;
 
 #[allow(dead_code)]
 pub const CODE_HASH: [u8; 32] = [
-    206, 40, 233, 94, 177, 91, 101, 22, 171, 11, 5, 89, 43, 242, 9, 87, 188, 185, 138, 211, 4, 63,
-    59, 135, 90, 206, 90, 4, 10, 167, 122, 113,
+    45, 111, 185, 8, 42, 163, 254, 28, 39, 170, 97, 69, 154, 251, 14, 249, 204, 222, 75, 48, 163,
+    142, 251, 48, 70, 74, 55, 211, 162, 178, 3, 80,
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, scale::Encode, scale::Decode)]
@@ -155,88 +155,67 @@ impl ink_wrapper_types::EventSource for Instance {
     type Event = event::Event;
 }
 
-#[allow(dead_code)]
-pub async fn upload<TxInfo, E, C: ink_wrapper_types::SignedConnection<TxInfo, E>>(
-    conn: &C,
-) -> Result<TxInfo, E> {
-    let wasm = include_bytes!("../contract/target/ink/bright_disputes.wasm");
-    let tx_info = conn.upload((*wasm).into(), CODE_HASH.into()).await?;
-
-    Ok(tx_info)
-}
-
 impl Instance {
     /// Constructor
     #[allow(dead_code, clippy::too_many_arguments)]
-    pub async fn new<TxInfo, E, C: ink_wrapper_types::SignedConnection<TxInfo, E>>(
-        conn: &C,
-        salt: Vec<u8>,
-    ) -> Result<Self, E> {
+    pub fn new() -> ink_wrapper_types::InstantiateCall<Self> {
         let data = vec![155, 174, 157, 94];
-        let account_id = conn.instantiate(CODE_HASH, salt, data).await?;
-        Ok(Self { account_id })
+        ink_wrapper_types::InstantiateCall::new(CODE_HASH, data)
     }
 
     ///  Get last dispute id
     #[allow(dead_code, clippy::too_many_arguments)]
-    pub async fn get_last_dispute_id<TxInfo, E, C: ink_wrapper_types::Connection<TxInfo, E>>(
+    pub fn get_last_dispute_id(
         &self,
-        conn: &C,
-    ) -> Result<Result<u32, ink_wrapper_types::InkLangError>, E> {
+    ) -> ink_wrapper_types::ReadCall<Result<u32, ink_wrapper_types::InkLangError>> {
         let data = vec![241, 53, 223, 85];
-        conn.read(self.account_id, data).await
+        ink_wrapper_types::ReadCall::new(self.account_id, data)
     }
 
     ///  Get single dispute by id
     #[allow(dead_code, clippy::too_many_arguments)]
-    pub async fn get_dispute<TxInfo, E, C: ink_wrapper_types::Connection<TxInfo, E>>(
+    pub fn get_dispute(
         &self,
-        conn: &C,
         dispute_id: u32,
-    ) -> Result<Result<Result<Dispute, BrightDisputesError>, ink_wrapper_types::InkLangError>, E>
-    {
+    ) -> ink_wrapper_types::ReadCall<
+        Result<Result<Dispute, BrightDisputesError>, ink_wrapper_types::InkLangError>,
+    > {
         let data = {
             let mut data = vec![76, 253, 140, 199];
             dispute_id.encode_to(&mut data);
             data
         };
-        conn.read(self.account_id, data).await
+        ink_wrapper_types::ReadCall::new(self.account_id, data)
     }
 
     ///  Get all disputes
     #[allow(dead_code, clippy::too_many_arguments)]
-    pub async fn get_all_disputes<TxInfo, E, C: ink_wrapper_types::Connection<TxInfo, E>>(
+    pub fn get_all_disputes(
         &self,
-        conn: &C,
-    ) -> Result<Result<Vec<Dispute>, ink_wrapper_types::InkLangError>, E> {
+    ) -> ink_wrapper_types::ReadCall<Result<Vec<Dispute>, ink_wrapper_types::InkLangError>> {
         let data = vec![29, 12, 242, 122];
-        conn.read(self.account_id, data).await
+        ink_wrapper_types::ReadCall::new(self.account_id, data)
     }
 
     ///  Get single dispute by id
     #[allow(dead_code, clippy::too_many_arguments)]
-    pub async fn remove_dispute<TxInfo, E, C: ink_wrapper_types::SignedConnection<TxInfo, E>>(
-        &self,
-        conn: &C,
-        dispute_id: u32,
-    ) -> Result<TxInfo, E> {
+    pub fn remove_dispute(&self, dispute_id: u32) -> ink_wrapper_types::ExecCall {
         let data = {
             let mut data = vec![187, 47, 61, 10];
             dispute_id.encode_to(&mut data);
             data
         };
-        conn.exec(self.account_id, data).await
+        ink_wrapper_types::ExecCall::new(self.account_id, data)
     }
 
     ///  Create new dispute
     #[allow(dead_code, clippy::too_many_arguments)]
-    pub async fn create_dispute<TxInfo, E, C: ink_wrapper_types::SignedConnection<TxInfo, E>>(
+    pub fn create_dispute(
         &self,
-        conn: &C,
         owner_link: String,
         defendant_id: ink_primitives::AccountId,
         escrow: u128,
-    ) -> Result<TxInfo, E> {
+    ) -> ink_wrapper_types::ExecCallNeedsValue {
         let data = {
             let mut data = vec![30, 25, 167, 107];
             owner_link.encode_to(&mut data);
@@ -244,187 +223,131 @@ impl Instance {
             escrow.encode_to(&mut data);
             data
         };
-        conn.exec(self.account_id, data).await
+        ink_wrapper_types::ExecCallNeedsValue::new(self.account_id, data)
     }
 
     ///  Defendant confirms his participation in dispute.
     #[allow(dead_code, clippy::too_many_arguments)]
-    pub async fn confirm_defendant<TxInfo, E, C: ink_wrapper_types::SignedConnection<TxInfo, E>>(
+    pub fn confirm_defendant(
         &self,
-        conn: &C,
         dispute_id: u32,
         defendant_link: String,
-    ) -> Result<TxInfo, E> {
+    ) -> ink_wrapper_types::ExecCallNeedsValue {
         let data = {
             let mut data = vec![164, 183, 46, 125];
             dispute_id.encode_to(&mut data);
             defendant_link.encode_to(&mut data);
             data
         };
-        conn.exec(self.account_id, data).await
+        ink_wrapper_types::ExecCallNeedsValue::new(self.account_id, data)
     }
 
     ///  Update owner link description
     #[allow(dead_code, clippy::too_many_arguments)]
-    pub async fn update_owner_description<
-        TxInfo,
-        E,
-        C: ink_wrapper_types::SignedConnection<TxInfo, E>,
-    >(
+    pub fn update_owner_description(
         &self,
-        conn: &C,
         dispute_id: u32,
         owner_link: String,
-    ) -> Result<TxInfo, E> {
+    ) -> ink_wrapper_types::ExecCall {
         let data = {
             let mut data = vec![68, 73, 200, 222];
             dispute_id.encode_to(&mut data);
             owner_link.encode_to(&mut data);
             data
         };
-        conn.exec(self.account_id, data).await
+        ink_wrapper_types::ExecCall::new(self.account_id, data)
     }
 
     ///  Update defendant link description
     #[allow(dead_code, clippy::too_many_arguments)]
-    pub async fn update_defendant_description<
-        TxInfo,
-        E,
-        C: ink_wrapper_types::SignedConnection<TxInfo, E>,
-    >(
+    pub fn update_defendant_description(
         &self,
-        conn: &C,
         dispute_id: u32,
         defendant_link: String,
-    ) -> Result<TxInfo, E> {
+    ) -> ink_wrapper_types::ExecCall {
         let data = {
             let mut data = vec![208, 24, 65, 84];
             dispute_id.encode_to(&mut data);
             defendant_link.encode_to(&mut data);
             data
         };
-        conn.exec(self.account_id, data).await
+        ink_wrapper_types::ExecCall::new(self.account_id, data)
     }
 
     ///  Voting, only jure can do it.
     #[allow(dead_code, clippy::too_many_arguments)]
-    pub async fn vote<TxInfo, E, C: ink_wrapper_types::SignedConnection<TxInfo, E>>(
-        &self,
-        conn: &C,
-        dispute_id: u32,
-        vote: u8,
-    ) -> Result<TxInfo, E> {
+    pub fn vote(&self, dispute_id: u32, vote: u8) -> ink_wrapper_types::ExecCall {
         let data = {
             let mut data = vec![8, 59, 226, 96];
             dispute_id.encode_to(&mut data);
             vote.encode_to(&mut data);
             data
         };
-        conn.exec(self.account_id, data).await
+        ink_wrapper_types::ExecCall::new(self.account_id, data)
     }
 
     ///  Register as an active jure. Juries are picked
     ///  from this pool to participate in disputes.
     #[allow(dead_code, clippy::too_many_arguments)]
-    pub async fn register_as_an_active_jure<
-        TxInfo,
-        E,
-        C: ink_wrapper_types::SignedConnection<TxInfo, E>,
-    >(
-        &self,
-        conn: &C,
-    ) -> Result<TxInfo, E> {
+    pub fn register_as_an_active_jure(&self) -> ink_wrapper_types::ExecCall {
         let data = vec![121, 6, 115, 245];
-        conn.exec(self.account_id, data).await
+        ink_wrapper_types::ExecCall::new(self.account_id, data)
     }
 
     ///  Unregister jure from the active juries pool.
     #[allow(dead_code, clippy::too_many_arguments)]
-    pub async fn unregister_as_an_active_jure<
-        TxInfo,
-        E,
-        C: ink_wrapper_types::SignedConnection<TxInfo, E>,
-    >(
-        &self,
-        conn: &C,
-    ) -> Result<TxInfo, E> {
+    pub fn unregister_as_an_active_jure(&self) -> ink_wrapper_types::ExecCall {
         let data = vec![121, 53, 33, 150];
-        conn.exec(self.account_id, data).await
+        ink_wrapper_types::ExecCall::new(self.account_id, data)
     }
 
     ///  Assigned jure can confirm his participation in dispute
     #[allow(dead_code, clippy::too_many_arguments)]
-    pub async fn confirm_jure_participation_in_dispute<
-        TxInfo,
-        E,
-        C: ink_wrapper_types::SignedConnection<TxInfo, E>,
-    >(
+    pub fn confirm_jure_participation_in_dispute(
         &self,
-        conn: &C,
         dispute_id: u32,
-    ) -> Result<TxInfo, E> {
+    ) -> ink_wrapper_types::ExecCallNeedsValue {
         let data = {
             let mut data = vec![149, 58, 196, 227];
             dispute_id.encode_to(&mut data);
             data
         };
-        conn.exec(self.account_id, data).await
+        ink_wrapper_types::ExecCallNeedsValue::new(self.account_id, data)
     }
 
     ///  Judge can confirm his participation in dispute
     #[allow(dead_code, clippy::too_many_arguments)]
-    pub async fn confirm_judge_participation_in_dispute<
-        TxInfo,
-        E,
-        C: ink_wrapper_types::SignedConnection<TxInfo, E>,
-    >(
+    pub fn confirm_judge_participation_in_dispute(
         &self,
-        conn: &C,
         dispute_id: u32,
-    ) -> Result<TxInfo, E> {
+    ) -> ink_wrapper_types::ExecCallNeedsValue {
         let data = {
             let mut data = vec![178, 215, 24, 15];
             dispute_id.encode_to(&mut data);
             data
         };
-        conn.exec(self.account_id, data).await
+        ink_wrapper_types::ExecCallNeedsValue::new(self.account_id, data)
     }
 
     ///  Unregister jure from the active juries pool.
     #[allow(dead_code, clippy::too_many_arguments)]
-    pub async fn process_dispute_round<
-        TxInfo,
-        E,
-        C: ink_wrapper_types::SignedConnection<TxInfo, E>,
-    >(
-        &self,
-        conn: &C,
-        dispute_id: u32,
-    ) -> Result<TxInfo, E> {
+    pub fn process_dispute_round(&self, dispute_id: u32) -> ink_wrapper_types::ExecCall {
         let data = {
             let mut data = vec![14, 13, 134, 23];
             dispute_id.encode_to(&mut data);
             data
         };
-        conn.exec(self.account_id, data).await
+        ink_wrapper_types::ExecCall::new(self.account_id, data)
     }
 
     ///  Judge can confirm his participation in dispute
     #[allow(dead_code, clippy::too_many_arguments)]
-    pub async fn distribute_deposit<
-        TxInfo,
-        E,
-        C: ink_wrapper_types::SignedConnection<TxInfo, E>,
-    >(
-        &self,
-        conn: &C,
-        dispute_id: u32,
-    ) -> Result<TxInfo, E> {
+    pub fn distribute_deposit(&self, dispute_id: u32) -> ink_wrapper_types::ExecCall {
         let data = {
             let mut data = vec![117, 233, 246, 239];
             dispute_id.encode_to(&mut data);
             data
         };
-        conn.exec(self.account_id, data).await
+        ink_wrapper_types::ExecCall::new(self.account_id, data)
     }
 }
