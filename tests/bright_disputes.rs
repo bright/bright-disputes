@@ -155,6 +155,12 @@ impl ink_wrapper_types::EventSource for Instance {
     type Event = event::Event;
 }
 
+#[allow(dead_code)]
+pub fn upload() -> ink_wrapper_types::UploadCall {
+    let wasm = include_bytes!("../contract/target/ink/bright_disputes.wasm");
+    ink_wrapper_types::UploadCall::new(wasm.to_vec(), CODE_HASH)
+}
+
 impl Instance {
     /// Constructor
     #[allow(dead_code, clippy::too_many_arguments)]
