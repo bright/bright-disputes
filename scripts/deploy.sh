@@ -6,9 +6,9 @@ set -euo pipefail
 
 SCRIPT_DIR=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" &>/dev/null && pwd)
 
-export NODE_IMAGE="public.ecr.aws/p6e8q1z1/aleph-node-liminal:d93048e"
-export CLIAIN_IMAGE="public.ecr.aws/p6e8q1z1/cliain-liminal:d93048e"
-export INK_DEV_IMAGE="public.ecr.aws/p6e8q1z1/ink-dev:1.1.0"
+export NODE_IMAGE="brightinventions/disputes-node"
+export CLIAIN_IMAGE="brightinventions/disputes-cliain"
+export INK_DEV_IMAGE="brightinventions/disputes-ink-dev"
 
 # actors
 DAMIAN=//0
@@ -100,7 +100,6 @@ run_snarkeling_node() {
 
 docker_ink_dev() {
     docker run --rm \
-        -u "${DOCKER_USER}" \
         -v "${PWD}":/code \
         -v ~/.cargo/git:/usr/local/cargo/git \
         -v ~/.cargo/registry:/usr/local/cargo/registry \
@@ -122,7 +121,7 @@ random_salt() {
 }
 
 contract_instantiate() {
-    docker_ink_dev "cargo contract instantiate --skip-confirm --url ${NODE} --suri ${ADMIN} --output-json --salt 0x$(random_salt) ${1}"
+    docker_ink_dev "cargo contract instantiate --skip-confirm --url ${NODE} --suri ${ADMIN} --output-json --execute --salt 0x$(random_salt) ${1}"
 }
 
 deploy_contract() {
