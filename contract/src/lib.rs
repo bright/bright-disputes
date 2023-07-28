@@ -4,6 +4,6 @@ mod contract;
 mod dispute;
 mod dispute_round;
 mod error;
-mod jure;
+mod juror;
 mod types;
 mod vote;

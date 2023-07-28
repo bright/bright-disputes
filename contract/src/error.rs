@@ -11,14 +11,14 @@ pub enum BrightDisputesError {
     InvalidAction,
     InvalidEscrowAmount,
 
-    JureAlreadyVoted,
-    JureAlreadyAdded,
-    JureAlreadyRegistered,
-    JureAlreadyAssignedToDispute,
-    JureIsNotAssignedToDispute,
-    JureAlreadyConfirmedDispute,
-    JureInvalidState,
-    JureNotExist,
+    JurorAlreadyVoted,
+    JurorAlreadyAdded,
+    JurorAlreadyRegistered,
+    JurorAlreadyAssignedToDispute,
+    JurorIsNotAssignedToDispute,
+    JurorAlreadyConfirmedDispute,
+    JurorInvalidState,
+    JurorNotExist,
     JuriesPoolIsToSmall,
     JuriesNotVoted(Vec<AccountId>),
     JudgeAlreadyAssignedToDispute,    
@@ -31,7 +31,7 @@ pub enum BrightDisputesError {
 
     MajorityOfVotesNotReached,
 
-    NotRegisteredAsJure,
+    NotRegisteredAsJuror,
 
     /// Pallet returned an error (through chain extension).
     InkError,
