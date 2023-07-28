@@ -7,17 +7,17 @@ use crate::types::VoteValue;
     derive(ink::storage::traits::StorageLayout, scale_info::TypeInfo)
 )]
 pub struct Vote {
-    jure: AccountId,
+    juror: AccountId,
     vote: VoteValue,
 }
 
 impl Vote {
     #[allow(dead_code)]
-    pub fn create(jure: AccountId, vote: VoteValue) -> Self {
-        Vote { jure, vote }
+    pub fn create(juror: AccountId, vote: VoteValue) -> Self {
+        Vote { juror, vote }
     }
-    pub fn jure(&self) -> AccountId {
-        self.jure
+    pub fn juror(&self) -> AccountId {
+        self.juror
     }
     pub fn vote(&self) -> VoteValue {
         self.vote

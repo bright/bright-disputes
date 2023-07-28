@@ -6,13 +6,13 @@ use crate::{
 };
 
 pub trait JuriesMap {
-    fn get_jure_or_assert(&self, jure_id: AccountId) -> Result<Jure>;
+    fn get_juror_or_assert(&self, juror_id: AccountId) -> Result<Juror>;
     fn remove_random_juries_from_pool_or_assert(
         &mut self,
         except: &Vec<AccountId>,
         number: u8,
     ) -> Result<Vec<AccountId>>;
-    fn update_jure(&mut self, jure: Jure);
+    fn update_juror(&mut self, juror: Juror);
 }
 
 #[derive(Clone, Debug, PartialEq, scale::Decode, scale::Encode)]
@@ -33,16 +33,16 @@ pub enum State {
     feature = "std",
     derive(ink::storage::traits::StorageLayout, scale_info::TypeInfo)
 )]
-pub struct Jure {
+pub struct Juror {
     id: AccountId,
     state: State,
     dispute_id: Option<DisputeId>,
 }
 
-impl Jure {
+impl Juror {
     #[allow(dead_code)]
     pub fn create(id: AccountId) -> Self {
-        Jure {
+        Juror {
             id,
             state: State::Pending,
             dispute_id: None,
@@ -75,7 +75,7 @@ impl Jure {
                 return Ok(());
             }
         }
-        Err(BrightDisputesError::JureInvalidState)
+        Err(BrightDisputesError::JurorInvalidState)
     }
 
     pub fn action_done(&mut self, dispute_id: DisputeId) -> Result<()> {
@@ -85,7 +85,7 @@ impl Jure {
                 return Ok(());
             }
         }
-        Err(BrightDisputesError::JureInvalidState)
+        Err(BrightDisputesError::JurorInvalidState)
     }
 
     pub fn assigned_dispute(&self) -> Option<DisputeId> {
@@ -94,7 +94,7 @@ impl Jure {
 
     pub fn assign_to_dispute(&mut self, dispute_id: DisputeId) -> Result<()> {
         if self.state != State::Pending {
-            return Err(BrightDisputesError::JureAlreadyAssignedToDispute);
+            return Err(BrightDisputesError::JurorAlreadyAssignedToDispute);
         }
         self.state = State::Assigned;
         self.dispute_id = Some(dispute_id);
@@ -103,9 +103,9 @@ impl Jure {
 
     pub fn confirm_participation_in_dispute(&mut self, dispute_id: DisputeId) -> Result<()> {
         if self.dispute_id.is_none() || self.dispute_id.unwrap() != dispute_id {
-            return Err(BrightDisputesError::JureIsNotAssignedToDispute);
+            return Err(BrightDisputesError::JurorIsNotAssignedToDispute);
         } else if self.state != State::Assigned {
-            return Err(BrightDisputesError::JureAlreadyConfirmedDispute);
+            return Err(BrightDisputesError::JurorAlreadyConfirmedDispute);
         }
         self.state = State::Confirmed;
         Ok(())
@@ -119,21 +119,21 @@ pub mod mock {
     use super::*;
     pub struct JuriesMapMock {
         juries_pool: Vec<AccountId>,
-        juries: Vec<Jure>,
+        juries: Vec<Juror>,
     }
 
     impl JuriesMapMock {
-        pub fn create(jure: Jure) -> Self {
-            let juries_pool: Vec<AccountId> = vec![jure.id()];
-            let juries: Vec<Jure> = vec![jure];
+        pub fn create(juror: Juror) -> Self {
+            let juries_pool: Vec<AccountId> = vec![juror.id()];
+            let juries: Vec<Juror> = vec![juror];
             JuriesMapMock {
                 juries_pool,
                 juries,
             }
         }
 
-        pub fn create_vec(juries: Vec<Jure>) -> Self {
-            let juries_pool: Vec<AccountId> = juries.iter().map(|jure| jure.id()).collect();
+        pub fn create_vec(juries: Vec<Juror>) -> Self {
+            let juries_pool: Vec<AccountId> = juries.iter().map(|juror| juror.id()).collect();
             JuriesMapMock {
                 juries_pool,
                 juries,
@@ -142,7 +142,7 @@ pub mod mock {
     }
 
     impl Deref for JuriesMapMock {
-        type Target = Vec<Jure>;
+        type Target = Vec<Juror>;
 
         fn deref(&self) -> &Self::Target {
             &self.juries
@@ -156,12 +156,12 @@ pub mod mock {
     }
 
     impl JuriesMap for JuriesMapMock {
-        fn get_jure_or_assert(&self, jure_id: AccountId) -> Result<Jure> {
-            let jure = self.juries.iter().find(|j| j.id() == jure_id);
-            if jure.is_none() {
-                return Err(BrightDisputesError::JureNotExist);
+        fn get_juror_or_assert(&self, juror_id: AccountId) -> Result<Juror> {
+            let juror = self.juries.iter().find(|j| j.id() == juror_id);
+            if juror.is_none() {
+                return Err(BrightDisputesError::JurorNotExist);
             }
-            Ok(jure.unwrap().clone())
+            Ok(juror.unwrap().clone())
         }
 
         fn remove_random_juries_from_pool_or_assert(
@@ -179,12 +179,12 @@ pub mod mock {
             Ok(juries)
         }
 
-        fn update_jure(&mut self, jure: Jure) {
-            let index = self.juries.iter().position(|j| j.id() == jure.id());
+        fn update_juror(&mut self, juror: Juror) {
+            let index = self.juries.iter().position(|j| j.id() == juror.id());
             if index.is_some() {
-                self.juries[index.unwrap()] = jure;
+                self.juries[index.unwrap()] = juror;
             } else {
-                self.juries.push(jure);
+                self.juries.push(juror);
             }
         }
     }
@@ -197,98 +197,98 @@ mod tests {
     use super::*;
 
     #[ink::test]
-    fn jure_created() {
+    fn juror_created() {
         let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
-        let jure = Jure::create(accounts.bob);
-        assert_eq!(jure.id, accounts.bob);
-        assert_eq!(jure.dispute_id, None);
+        let juror = Juror::create(accounts.bob);
+        assert_eq!(juror.id, accounts.bob);
+        assert_eq!(juror.dispute_id, None);
     }
 
     #[ink::test]
     fn action_done() {
         let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
-        let mut jure = Jure::create(accounts.bob);
+        let mut juror = Juror::create(accounts.bob);
 
         let dispute_id: DisputeId = 1;
 
         // Failed, no dispute assigned
-        let result = jure.request_for_action(dispute_id);
-        assert_eq!(result, Err(BrightDisputesError::JureInvalidState));
+        let result = juror.request_for_action(dispute_id);
+        assert_eq!(result, Err(BrightDisputesError::JurorInvalidState));
 
         // Failed, no dispute assigned
-        let result = jure.action_done(dispute_id);
-        assert_eq!(result, Err(BrightDisputesError::JureInvalidState));
+        let result = juror.action_done(dispute_id);
+        assert_eq!(result, Err(BrightDisputesError::JurorInvalidState));
 
-        jure.assign_to_dispute(dispute_id)
-            .expect("Failed to assign jure to dispute!");
+        juror.assign_to_dispute(dispute_id)
+            .expect("Failed to assign juror to dispute!");
 
         // Failed, no action assigned
-        let result = jure.action_done(dispute_id);
-        assert_eq!(result, Err(BrightDisputesError::JureInvalidState));
+        let result = juror.action_done(dispute_id);
+        assert_eq!(result, Err(BrightDisputesError::JurorInvalidState));
 
-        // Failed, jure not Confirmed
-        let result = jure.request_for_action(dispute_id);
-        assert_eq!(result, Err(BrightDisputesError::JureInvalidState));
+        // Failed, juror not Confirmed
+        let result = juror.request_for_action(dispute_id);
+        assert_eq!(result, Err(BrightDisputesError::JurorInvalidState));
 
-        jure.confirm_participation_in_dispute(dispute_id)
-            .expect("Failed to confirm jure participation in dispute!");
+        juror.confirm_participation_in_dispute(dispute_id)
+            .expect("Failed to confirm juror participation in dispute!");
 
         // Success
-        let result = jure.request_for_action(dispute_id);
+        let result = juror.request_for_action(dispute_id);
         assert_eq!(result, Ok(()));
 
         // Success
-        let result = jure.action_done(dispute_id);
+        let result = juror.action_done(dispute_id);
         assert_eq!(result, Ok(()));
 
         // Failed, already done
-        let result = jure.action_done(dispute_id);
-        assert_eq!(result, Err(BrightDisputesError::JureInvalidState));
+        let result = juror.action_done(dispute_id);
+        assert_eq!(result, Err(BrightDisputesError::JurorInvalidState));
 
         // Success
-        let result = jure.request_for_action(dispute_id);
+        let result = juror.request_for_action(dispute_id);
         assert_eq!(result, Ok(()));
     }
 
     #[ink::test]
     fn assign_to_dispute() {
         let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
-        let mut jure = Jure::create(accounts.alice);
+        let mut juror = Juror::create(accounts.alice);
 
         // Success
-        let result = jure.assign_to_dispute(2);
+        let result = juror.assign_to_dispute(2);
         assert_eq!(result, Ok(()));
-        assert_eq!(jure.dispute_id, Some(2));
+        assert_eq!(juror.dispute_id, Some(2));
 
         // Failed to assign, already assigned
-        let result = jure.assign_to_dispute(2);
+        let result = juror.assign_to_dispute(2);
         assert_eq!(
             result,
-            Err(BrightDisputesError::JureAlreadyAssignedToDispute)
+            Err(BrightDisputesError::JurorAlreadyAssignedToDispute)
         );
     }
 
     #[ink::test]
     fn confirm_participation_in_dispute() {
         let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
-        let mut jure = Jure::create(accounts.alice);
+        let mut juror = Juror::create(accounts.alice);
 
-        // Failed to confirm participation in dispute, when jure is not assigned.
-        let result = jure.confirm_participation_in_dispute(1);
-        assert_eq!(result, Err(BrightDisputesError::JureIsNotAssignedToDispute));
+        // Failed to confirm participation in dispute, when juror is not assigned.
+        let result = juror.confirm_participation_in_dispute(1);
+        assert_eq!(result, Err(BrightDisputesError::JurorIsNotAssignedToDispute));
 
-        // Assign jure to dispute.
-        jure.assign_to_dispute(1).expect("Unable to add jure!");
+        // Assign juror to dispute.
+        juror.assign_to_dispute(1).expect("Unable to add juror!");
 
         // Success
-        let result = jure.confirm_participation_in_dispute(1);
+        let result = juror.confirm_participation_in_dispute(1);
         assert_eq!(result, Ok(()));
 
-        // Failed to confirm participation in dispute, jure already confirmed.
-        let result = jure.confirm_participation_in_dispute(1);
+        // Failed to confirm participation in dispute, juror already confirmed.
+        let result = juror.confirm_participation_in_dispute(1);
         assert_eq!(
             result,
-            Err(BrightDisputesError::JureAlreadyConfirmedDispute)
+            Err(BrightDisputesError::JurorAlreadyConfirmedDispute)
         );
     }
 }

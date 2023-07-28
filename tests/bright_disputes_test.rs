@@ -57,9 +57,9 @@ async fn test_dispute_success() -> Result<()> {
     // Create juries
     let all_juries_conn: Vec<SignedConnection> = create_new_connections(4).await?;
 
-    // Register as a jure
+    // Register as a juror
     for conn in &all_juries_conn {
-        conn.exec(contract.register_as_an_active_jure()).await?;
+        conn.exec(contract.register_as_an_active_juror()).await?;
     }
 
     // Process dispute round, assign juries and judge to dispute
@@ -89,7 +89,7 @@ async fn test_dispute_success() -> Result<()> {
     for conn in &juries_conn {
         conn.exec(
             contract
-                .confirm_jure_participation_in_dispute(dispute_id)
+                .confirm_juror_participation_in_dispute(dispute_id)
                 .with_value(escrow),
         )
         .await?;
@@ -171,9 +171,9 @@ async fn test_dispute_rounds() -> Result<()> {
     // Create juries
     let all_juries_conn: Vec<SignedConnection> = create_new_connections(10).await?;
 
-    // Register as a jure
+    // Register as a juror
     for conn in &all_juries_conn {
-        conn.exec(contract.register_as_an_active_jure()).await?;
+        conn.exec(contract.register_as_an_active_juror()).await?;
     }
 
     // Process dispute round, assign juries and judge to dispute
@@ -205,7 +205,7 @@ async fn test_dispute_rounds() -> Result<()> {
     for conn in &juries_conn {
         conn.exec(
             contract
-                .confirm_jure_participation_in_dispute(dispute_id)
+                .confirm_juror_participation_in_dispute(dispute_id)
                 .with_value(escrow),
         )
         .await?;
@@ -302,7 +302,7 @@ async fn test_dispute_rounds() -> Result<()> {
     for conn in &diff_juries_conn {
         conn.exec(
             contract
-                .confirm_jure_participation_in_dispute(dispute_id)
+                .confirm_juror_participation_in_dispute(dispute_id)
                 .with_value(escrow),
         )
         .await?;
