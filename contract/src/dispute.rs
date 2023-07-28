@@ -8,7 +8,7 @@ use ink::{
 use crate::{
     dispute_round::DisputeRound,
     error::BrightDisputesError,
-    jure::{Jure, JuriesMap},
+    juror::{Juror, JuriesMap},
     types::{Balance, DisputeId, Result, Timestamp},
     vote::Vote,
 };
@@ -198,9 +198,9 @@ impl Dispute {
 
         // Move juries who wrongly voted to banned list
         let juries_to_ban = self.get_juries_voted_against(result.opposite());
-        for jure in juries_to_ban {
-            self.move_to_banned(jure)
-                .expect("Jure is not assigned to the dispute!");
+        for juror in juries_to_ban {
+            self.move_to_banned(juror)
+                .expect("Juror is not assigned to the dispute!");
         }
         Ok(())
     }
@@ -225,8 +225,8 @@ impl Dispute {
     pub fn vote(&mut self, vote: Vote) -> Result<()> {
         self.assert_state(DisputeState::Running)?;
         self.assert_can_vote()?;
-        self.assert_jure(vote.jure())?;
-        self.assert_not_voted(vote.jure())?;
+        self.assert_juror(vote.juror())?;
+        self.assert_not_voted(vote.juror())?;
         self.votes.push(vote);
         Ok(())
     }
@@ -258,19 +258,19 @@ impl Dispute {
         Err(BrightDisputesError::MajorityOfVotesNotReached)
     }
 
-    /// Assign jure to the dispute
-    pub fn assign_jure(&mut self, jure: &mut Jure) -> Result<()> {
+    /// Assign juror to the dispute
+    pub fn assign_juror(&mut self, juror: &mut Juror) -> Result<()> {
         self.assert_state(DisputeState::Running)?;
-        self.assert_not_jure(jure.id())?;
-        self.assert_not_owner_call(jure.id())?;
-        self.assert_not_defendant_call(jure.id())?;
-        jure.assign_to_dispute(self.id)?;
-        self.juries.push(jure.id());
+        self.assert_not_juror(juror.id())?;
+        self.assert_not_owner_call(juror.id())?;
+        self.assert_not_defendant_call(juror.id())?;
+        juror.assign_to_dispute(self.id)?;
+        self.juries.push(juror.id());
         Ok(())
     }
 
     /// Assign judge to the dispute
-    pub fn assign_judge(&mut self, judge: &mut Jure) -> Result<()> {
+    pub fn assign_judge(&mut self, judge: &mut Juror) -> Result<()> {
         self.assert_state(DisputeState::Running)?;
         self.assert_not_owner_call(judge.id())?;
         self.assert_not_defendant_call(judge.id())?;
@@ -278,14 +278,14 @@ impl Dispute {
             return Err(BrightDisputesError::JudgeAlreadyAssignedToDispute);
         }
         if self.juries().contains(&judge.id()) {
-            return Err(BrightDisputesError::JureAlreadyAssignedToDispute);
+            return Err(BrightDisputesError::JurorAlreadyAssignedToDispute);
         }
         judge.assign_to_dispute(self.id)?;
         self.judge = Some(judge.id());
         Ok(())
     }
 
-    /// Move jure / judge to banned list
+    /// Move juror / judge to banned list
     pub fn move_to_banned(&mut self, account_id: AccountId) -> Result<()> {
         if self.judge.is_some() && (self.judge.unwrap() == account_id) {
             self.judge = None;
@@ -350,7 +350,7 @@ impl Dispute {
     pub fn get_not_voted_juries(&self) -> Vec<AccountId> {
         self.juries()
             .iter()
-            .filter(|&id| self.votes().iter().position(|v| v.jure() == *id).is_none())
+            .filter(|&id| self.votes().iter().position(|v| v.juror() == *id).is_none())
             .map(|&id| id)
             .collect()
     }
@@ -363,7 +363,7 @@ impl Dispute {
                 (dispute_result == DisputeResult::Owner && vote.is_vote_against_owner())
                     || (dispute_result == DisputeResult::Defendant && !vote.is_vote_against_owner())
             })
-            .map(|vote| vote.jure())
+            .map(|vote| vote.juror())
             .collect()
     }
 
@@ -431,28 +431,28 @@ impl Dispute {
         Ok(())
     }
 
-    fn assert_jure(&self, jure: AccountId) -> Result<()> {
+    fn assert_juror(&self, juror: AccountId) -> Result<()> {
         for j in &self.juries {
-            if *j == jure {
+            if *j == juror {
                 return Ok(());
             }
         }
         return Err(BrightDisputesError::NotAuthorized);
     }
 
-    fn assert_not_jure(&self, jure: AccountId) -> Result<()> {
+    fn assert_not_juror(&self, juror: AccountId) -> Result<()> {
         for j in &self.juries {
-            if *j == jure {
-                return Err(BrightDisputesError::JureAlreadyAdded);
+            if *j == juror {
+                return Err(BrightDisputesError::JurorAlreadyAdded);
             }
         }
         return Ok(());
     }
 
-    fn assert_not_voted(&self, jure: AccountId) -> Result<()> {
+    fn assert_not_voted(&self, juror: AccountId) -> Result<()> {
         for v in &self.votes {
-            if v.jure() == jure {
-                return Err(BrightDisputesError::JureAlreadyVoted);
+            if v.juror() == juror {
+                return Err(BrightDisputesError::JurorAlreadyVoted);
             }
         }
         return Ok(());
@@ -472,7 +472,7 @@ mod tests {
     use ink::env::{test::set_caller, DefaultEnvironment};
 
     use super::*;
-    use crate::{dispute_round::mock::DisputeRoundFake, jure::mock::JuriesMapMock};
+    use crate::{dispute_round::mock::DisputeRoundFake, juror::mock::JuriesMapMock};
 
     fn default_test_running_dispute() -> Dispute {
         let escrow_amount: Balance = 15;
@@ -524,13 +524,13 @@ mod tests {
         let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
         let mut dispute = default_test_running_dispute();
 
-        let mut jure = Jure::create(accounts.charlie);
-        dispute.assign_jure(&mut jure).expect("Unable to add jure!");
+        let mut juror = Juror::create(accounts.charlie);
+        dispute.assign_juror(&mut juror).expect("Unable to add juror!");
 
         // Force "Voting" state
         dispute.dispute_round = Some(DisputeRoundFake::voting(0u64));
 
-        // Only jure can vote
+        // Only juror can vote
         let result = dispute.vote(Vote::create(accounts.bob, 1));
         assert_eq!(result, Err(BrightDisputesError::NotAuthorized));
 
@@ -538,9 +538,9 @@ mod tests {
         let result = dispute.vote(Vote::create(accounts.charlie, 1));
         assert_eq!(result, Ok(()));
 
-        // Jure can vote only once
+        // Juror can vote only once
         let result = dispute.vote(Vote::create(accounts.charlie, 0));
-        assert_eq!(result, Err(BrightDisputesError::JureAlreadyVoted));
+        assert_eq!(result, Err(BrightDisputesError::JurorAlreadyVoted));
     }
 
     #[ink::test]
@@ -551,23 +551,23 @@ mod tests {
         // Force "Voting" state
         dispute.dispute_round = Some(DisputeRoundFake::voting(0u64));
 
-        let mut charlie = Jure::create(accounts.charlie);
+        let mut charlie = Juror::create(accounts.charlie);
         dispute
-            .assign_jure(&mut charlie)
-            .expect("Unable to add jure!");
+            .assign_juror(&mut charlie)
+            .expect("Unable to add juror!");
 
-        let mut eve = Jure::create(accounts.eve);
-        dispute.assign_jure(&mut eve).expect("Unable to add jure!");
+        let mut eve = Juror::create(accounts.eve);
+        dispute.assign_juror(&mut eve).expect("Unable to add juror!");
 
-        let mut frank = Jure::create(accounts.frank);
+        let mut frank = Juror::create(accounts.frank);
         dispute
-            .assign_jure(&mut frank)
-            .expect("Unable to add jure!");
+            .assign_juror(&mut frank)
+            .expect("Unable to add juror!");
 
-        let mut django = Jure::create(accounts.django);
+        let mut django = Juror::create(accounts.django);
         dispute
             .assign_judge(&mut django)
-            .expect("Unable to add jure!");
+            .expect("Unable to add juror!");
 
         // Test, only judge can count the votes.
         set_caller::<DefaultEnvironment>(accounts.alice);
@@ -609,30 +609,30 @@ mod tests {
     }
 
     #[ink::test]
-    fn assign_jure() {
+    fn assign_juror() {
         let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
         let mut dispute = default_test_running_dispute();
 
-        // Failed, owner can't assign as a jure to dispute
-        let mut alice = Jure::create(accounts.alice);
-        let result = dispute.assign_jure(&mut alice);
+        // Failed, owner can't assign as a juror to dispute
+        let mut alice = Juror::create(accounts.alice);
+        let result = dispute.assign_juror(&mut alice);
         assert_eq!(result, Err(BrightDisputesError::NotAuthorized));
 
-        // Failed, defendant can't assign as a jure to dispute
-        let mut bob = Jure::create(accounts.bob);
-        let result = dispute.assign_jure(&mut bob);
+        // Failed, defendant can't assign as a juror to dispute
+        let mut bob = Juror::create(accounts.bob);
+        let result = dispute.assign_juror(&mut bob);
         assert_eq!(result, Err(BrightDisputesError::NotAuthorized));
 
         // Success
-        let mut jure = Jure::create(accounts.charlie);
-        let result = dispute.assign_jure(&mut jure);
+        let mut juror = Juror::create(accounts.charlie);
+        let result = dispute.assign_juror(&mut juror);
         assert_eq!(result, Ok(()));
-        assert_eq!(jure.assigned_dispute(), Some(1));
+        assert_eq!(juror.assigned_dispute(), Some(1));
 
-        // Jure already added
-        let result = dispute.assign_jure(&mut jure);
-        assert_eq!(result, Err(BrightDisputesError::JureAlreadyAdded));
-        assert_eq!(jure.assigned_dispute(), Some(1));
+        // Juror already added
+        let result = dispute.assign_juror(&mut juror);
+        assert_eq!(result, Err(BrightDisputesError::JurorAlreadyAdded));
+        assert_eq!(juror.assigned_dispute(), Some(1));
     }
 
     #[ink::test]
@@ -640,36 +640,36 @@ mod tests {
         let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
         let mut dispute = default_test_running_dispute();
 
-        let mut charlie = Jure::create(accounts.charlie);
+        let mut charlie = Juror::create(accounts.charlie);
         dispute
-            .assign_jure(&mut charlie)
-            .expect("Unable to assign \"charlie\" as a jure!");
+            .assign_juror(&mut charlie)
+            .expect("Unable to assign \"charlie\" as a juror!");
 
-        // Unable to assign jure as a judge
+        // Unable to assign juror as a judge
         let result = dispute.assign_judge(&mut charlie);
         assert_eq!(
             result,
-            Err(BrightDisputesError::JureAlreadyAssignedToDispute)
+            Err(BrightDisputesError::JurorAlreadyAssignedToDispute)
         );
 
         // Failed, owner can't assign as a judge to dispute
-        let mut alice = Jure::create(accounts.alice);
+        let mut alice = Juror::create(accounts.alice);
         let result = dispute.assign_judge(&mut alice);
         assert_eq!(result, Err(BrightDisputesError::NotAuthorized));
 
         // Failed, defendant can't assign as a judge to dispute
-        let mut bob = Jure::create(accounts.bob);
+        let mut bob = Juror::create(accounts.bob);
         let result = dispute.assign_judge(&mut bob);
         assert_eq!(result, Err(BrightDisputesError::NotAuthorized));
 
-        let mut eve = Jure::create(accounts.eve);
+        let mut eve = Juror::create(accounts.eve);
 
         // Success
         let result = dispute.assign_judge(&mut eve);
         assert_eq!(result, Ok(()));
         assert_eq!(eve.assigned_dispute(), Some(1));
 
-        // Jure already added
+        // Juror already added
         let result = dispute.assign_judge(&mut eve);
         assert_eq!(
             result,
@@ -683,15 +683,15 @@ mod tests {
         let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
         let mut dispute = default_test_running_dispute();
 
-        let mut jure = Jure::create(accounts.charlie);
-        dispute.assign_jure(&mut jure).expect("Unable to add jure!");
+        let mut juror = Juror::create(accounts.charlie);
+        dispute.assign_juror(&mut juror).expect("Unable to add juror!");
 
-        let mut judge = Jure::create(accounts.django);
+        let mut judge = Juror::create(accounts.django);
         dispute
             .assign_judge(&mut judge)
             .expect("Unable to add judge!");
 
-        // Failed to moved unassigned jure or judge.
+        // Failed to moved unassigned juror or judge.
         assert_eq!(
             dispute.move_to_banned(accounts.frank),
             Err(BrightDisputesError::InvalidAction)
@@ -712,7 +712,7 @@ mod tests {
         );
         assert_eq!(dispute.banned.len(), 0);
 
-        // Success, moved jure.
+        // Success, moved juror.
         let result = dispute.move_to_banned(accounts.charlie);
         assert_eq!(result, Ok(()));
         assert_eq!(dispute.juries.len(), 0);
@@ -752,7 +752,7 @@ mod tests {
             20,
         );
 
-        let mut juries = JuriesMapMock::create(Jure::create(accounts.charlie));
+        let mut juries = JuriesMapMock::create(Juror::create(accounts.charlie));
 
         // Failed, dispute round not started
         let result = dispute.process_dispute_round(&mut juries, 0u64);
@@ -868,13 +868,13 @@ mod tests {
         let mut dispute = default_test_running_dispute();
 
         let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
-        let mut charlie = Jure::create(accounts.charlie);
+        let mut charlie = Juror::create(accounts.charlie);
         dispute
-            .assign_jure(&mut charlie)
-            .expect("Unable to add jure!");
+            .assign_juror(&mut charlie)
+            .expect("Unable to add juror!");
 
-        let mut eve = Jure::create(accounts.eve);
-        dispute.assign_jure(&mut eve).expect("Unable to add jure!");
+        let mut eve = Juror::create(accounts.eve);
+        dispute.assign_juror(&mut eve).expect("Unable to add juror!");
 
         // Force "Voting" state
         dispute.dispute_round = Some(DisputeRoundFake::voting(0u64));
@@ -911,16 +911,16 @@ mod tests {
         // Force "Voting" state
         dispute.dispute_round = Some(DisputeRoundFake::voting(0u64));
 
-        let mut charlie = Jure::create(accounts.charlie);
+        let mut charlie = Juror::create(accounts.charlie);
         dispute
-            .assign_jure(&mut charlie)
-            .expect("Unable to add jure!");
+            .assign_juror(&mut charlie)
+            .expect("Unable to add juror!");
         dispute
             .vote(Vote::create(accounts.charlie, 1))
             .expect("Failed to vote!");
 
-        let mut eve = Jure::create(accounts.eve);
-        dispute.assign_jure(&mut eve).expect("Unable to add jure!");
+        let mut eve = Juror::create(accounts.eve);
+        dispute.assign_juror(&mut eve).expect("Unable to add juror!");
 
         assert_eq!(dispute.votes().len(), 1);
         assert_eq!(dispute.juries().len(), 2);
@@ -958,17 +958,17 @@ mod tests {
         dispute.state = DisputeState::Running;
 
         // Charlie vote against Owner
-        let mut charlie = Jure::create(accounts.charlie);
+        let mut charlie = Juror::create(accounts.charlie);
         dispute
-            .assign_jure(&mut charlie)
-            .expect("Unable to add jure!");
+            .assign_juror(&mut charlie)
+            .expect("Unable to add juror!");
         dispute
             .vote(Vote::create(accounts.charlie, 1))
             .expect("Failed to vote!");
 
         // Eve vote against Defendant
-        let mut eve = Jure::create(accounts.eve);
-        dispute.assign_jure(&mut eve).expect("Unable to add jure!");
+        let mut eve = Juror::create(accounts.eve);
+        dispute.assign_juror(&mut eve).expect("Unable to add juror!");
         dispute
             .vote(Vote::create(accounts.eve, 0))
             .expect("Failed to vote!");

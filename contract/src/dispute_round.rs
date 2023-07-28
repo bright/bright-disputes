@@ -3,7 +3,7 @@ use ink::{prelude::vec::Vec, primitives::AccountId};
 use crate::{
     dispute::Dispute,
     error::BrightDisputesError,
-    jure::JuriesMap,
+    juror::JuriesMap,
     types::{Result, Timestamp},
 };
 
@@ -91,10 +91,10 @@ impl DisputeRound {
                 self.handle_picking_the_judge(contract, dispute)?;
 
                 // Request juries to vote
-                for jure_id in dispute.juries() {
-                    let mut jure = contract.get_jure_or_assert(jure_id)?;
-                    jure.request_for_action(dispute.id())?;
-                    contract.update_jure(jure);
+                for juror_id in dispute.juries() {
+                    let mut juror = contract.get_juror_or_assert(juror_id)?;
+                    juror.request_for_action(dispute.id())?;
+                    contract.update_juror(juror);
                 }
 
                 self.state = RoundState::Voting;
@@ -122,10 +122,10 @@ impl DisputeRound {
         let juries_ids = contract
             .remove_random_juries_from_pool_or_assert(&banned_accounts, extend_juries_by)?;
 
-        for jure_id in juries_ids {
-            let mut jure = contract.get_jure_or_assert(jure_id)?;
-            dispute.assign_jure(&mut jure)?;
-            contract.update_jure(jure);
+        for juror_id in juries_ids {
+            let mut juror = contract.get_juror_or_assert(juror_id)?;
+            dispute.assign_juror(&mut juror)?;
+            contract.update_juror(juror);
         }
 
         Ok(())
@@ -145,9 +145,9 @@ impl DisputeRound {
             let judge_id =
                 contract.remove_random_juries_from_pool_or_assert(&banned_accounts, 1)?;
 
-            let mut jure = contract.get_jure_or_assert(judge_id[0])?;
-            dispute.assign_judge(&mut jure)?;
-            contract.update_jure(jure);
+            let mut juror = contract.get_juror_or_assert(judge_id[0])?;
+            dispute.assign_judge(&mut juror)?;
+            contract.update_juror(juror);
         }
         Ok(())
     }
@@ -165,9 +165,9 @@ impl DisputeRound {
         }
 
         let dispute_id = dispute.id();
-        for jure_id in dispute.juries() {
-            let jure = contract.get_jure_or_assert(jure_id)?;
-            if !jure.is_confirmed(dispute_id) {
+        for juror_id in dispute.juries() {
+            let juror = contract.get_juror_or_assert(juror_id)?;
+            if !juror.is_confirmed(dispute_id) {
                 return Err(BrightDisputesError::CanNotSwitchDisputeRound);
             }
         }
@@ -186,7 +186,7 @@ impl DisputeRound {
             return Err(BrightDisputesError::CanNotSwitchDisputeRound);
         }
 
-        let judge = contract.get_jure_or_assert(dispute.judge().unwrap())?;
+        let judge = contract.get_juror_or_assert(dispute.judge().unwrap())?;
         if !judge.is_confirmed(dispute.id()) {
             return Err(BrightDisputesError::CanNotSwitchDisputeRound);
         }
@@ -213,9 +213,9 @@ impl DisputeRound {
 
         // Request judge to count the votes.
         let judge_id = dispute.judge().unwrap();
-        let mut judge = contract.get_jure_or_assert(judge_id)?;
+        let mut judge = contract.get_juror_or_assert(judge_id)?;
         judge.request_for_action(dispute.id())?;
-        contract.update_jure(judge);
+        contract.update_juror(judge);
 
         self.state = RoundState::CountingTheVotes;
         self.state_deadline = Self::deadline(timestamp, Self::VOTING_COUNTING);
@@ -235,9 +235,9 @@ impl DisputeRound {
 
         // Mark judge work as done.
         let judge_id = dispute.judge().unwrap();
-        let mut judge = contract.get_jure_or_assert(judge_id)?;
+        let mut judge = contract.get_juror_or_assert(judge_id)?;
         judge.action_done(dispute.id())?;
-        contract.update_jure(judge);
+        contract.update_juror(judge);
 
         let result = dispute.count_votes()?;
         dispute.end_dispute(result)?;
@@ -275,7 +275,7 @@ mod tests {
     use super::*;
     use crate::{
         dispute::DisputeResult,
-        jure::{mock::JuriesMapMock, Jure},
+        juror::{mock::JuriesMapMock, Jure},
         vote::Vote,
     };
 
@@ -378,9 +378,9 @@ mod tests {
             .process_dispute_round(&mut juries, &mut dispute, start_timestamp)
             .expect("Failed to assign juries and judge!");
 
-        for jure in juries.iter_mut() {
-            jure.confirm_participation_in_dispute(1)
-                .expect("Unable confirm jure participation in dispute!");
+        for juror in juries.iter_mut() {
+            juror.confirm_participation_in_dispute(1)
+                .expect("Unable confirm juror participation in dispute!");
         }
 
         // Failed, only owner can switch the state
@@ -431,9 +431,9 @@ mod tests {
             .process_dispute_round(&mut juries, &mut dispute, start_timestamp)
             .expect("Failed to assign juries and judge!");
 
-        for jure in juries.iter_mut() {
-            jure.confirm_participation_in_dispute(1)
-                .expect("Unable confirm jure participation in dispute!");
+        for juror in juries.iter_mut() {
+            juror.confirm_participation_in_dispute(1)
+                .expect("Unable confirm juror participation in dispute!");
         }
 
         // Move to voting state
@@ -458,10 +458,10 @@ mod tests {
         // Before voting, we need to update dispute round
         dispute.set_dispute_round(round.clone());
 
-        for jure_id in dispute.juries() {
-            set_caller::<DefaultEnvironment>(jure_id);
+        for juror_id in dispute.juries() {
+            set_caller::<DefaultEnvironment>(juror_id);
             dispute
-                .vote(Vote::create(jure_id, 1))
+                .vote(Vote::create(juror_id, 1))
                 .expect("Failed make a vote!");
         }
 
@@ -508,9 +508,9 @@ mod tests {
             .process_dispute_round(&mut juries, &mut dispute, start_timestamp)
             .expect("Failed to assign juries and judge!");
 
-        for jure in juries.iter_mut() {
-            jure.confirm_participation_in_dispute(1)
-                .expect("Unable confirm jure participation in dispute!");
+        for juror in juries.iter_mut() {
+            juror.confirm_participation_in_dispute(1)
+                .expect("Unable confirm juror participation in dispute!");
         }
 
         // Move to voting state
@@ -586,9 +586,9 @@ mod tests {
             .process_dispute_round(&mut juries, &mut dispute, start_timestamp)
             .expect("Failed to assign juries and judge!");
 
-        for jure in juries.iter_mut() {
-            jure.confirm_participation_in_dispute(1)
-                .expect("Unable confirm jure participation in dispute!");
+        for juror in juries.iter_mut() {
+            juror.confirm_participation_in_dispute(1)
+                .expect("Unable confirm juror participation in dispute!");
         }
 
         // Move to voting state

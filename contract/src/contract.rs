@@ -10,7 +10,7 @@ pub mod bright_disputes {
         dispute::{Dispute, DisputeResult},
         dispute_round::DisputeRound,
         error::BrightDisputesError,
-        jure::{Jure, JuriesMap},
+        juror::{Juror, JuriesMap},
         types::{DisputeId, Result, VoteValue},
         vote::Vote,
     };
@@ -45,15 +45,15 @@ pub mod bright_disputes {
     pub struct BrightDisputes {
         last_dispute_id: DisputeId,
         juries_pool: Vec<AccountId>,
-        juries: Mapping<AccountId, Jure>,
+        juries: Mapping<AccountId, Juror>,
         disputes: Mapping<DisputeId, Dispute>,
     }
 
     impl JuriesMap for BrightDisputes {
-        fn get_jure_or_assert(&self, jure_id: AccountId) -> Result<Jure> {
+        fn get_juror_or_assert(&self, juror_id: AccountId) -> Result<Juror> {
             self.juries
-                .get(jure_id)
-                .ok_or(BrightDisputesError::JureNotExist)
+                .get(juror_id)
+                .ok_or(BrightDisputesError::JurorNotExist)
         }
 
         fn remove_random_juries_from_pool_or_assert(
@@ -63,14 +63,14 @@ pub mod bright_disputes {
         ) -> Result<Vec<AccountId>> {
             let juries_ids = self.get_random_juries_from_pool(&except, number, 123 as u64)?;
             for id in &juries_ids {
-                self.remove_jure_from_pool_or_assert(*id)?;
+                self.remove_juror_from_pool_or_assert(*id)?;
             }
             Ok(juries_ids)
         }
 
-        /// Update jure
-        fn update_jure(&mut self, jure: Jure) {
-            self.juries.insert(jure.id(), &jure);
+        /// Update juror
+        fn update_juror(&mut self, juror: Juror) {
+            self.juries.insert(juror.id(), &juror);
         }
     }
 
@@ -190,46 +190,46 @@ pub mod bright_disputes {
             Ok(())
         }
 
-        /// Voting, only jure can do it.
+        /// Voting, only juror can do it.
         #[ink(message)]
         pub fn vote(&mut self, dispute_id: DisputeId, vote: VoteValue) -> Result<()> {
             let caller = ink::env::caller::<ink::env::DefaultEnvironment>();
             let mut dispute = self.get_dispute_or_assert(dispute_id)?;
-            let mut jure = self.get_jure_or_assert(caller)?;
+            let mut juror = self.get_juror_or_assert(caller)?;
             dispute.vote(Vote::create(caller, vote))?;
-            jure.action_done(dispute.id())?;
-            self.update_jure(jure);
+            juror.action_done(dispute.id())?;
+            self.update_juror(juror);
             self.update_dispute(dispute);
             Ok(())
         }
 
-        /// Register as an active jure. Juries are picked
+        /// Register as an active juror. Juries are picked
         /// from this pool to participate in disputes.
         #[ink(message)]
-        pub fn register_as_an_active_jure(&mut self) -> Result<()> {
+        pub fn register_as_an_active_juror(&mut self) -> Result<()> {
             let caller = ink::env::caller::<ink::env::DefaultEnvironment>();
-            self.assert_jure_not_in_pool(caller)?;
+            self.assert_juror_not_in_pool(caller)?;
 
-            let jure = self
+            let juror = self
                 .juries
                 .get(caller)
-                .unwrap_or_else(|| Jure::create(caller));
-            self.juries_pool.push(jure.id());
-            self.update_jure(jure);
+                .unwrap_or_else(|| Juror::create(caller));
+            self.juries_pool.push(juror.id());
+            self.update_juror(juror);
             Ok(())
         }
 
-        /// Unregister jure from the active juries pool.
+        /// Unregister juror from the active juries pool.
         #[ink(message)]
-        pub fn unregister_as_an_active_jure(&mut self) -> Result<()> {
+        pub fn unregister_as_an_active_juror(&mut self) -> Result<()> {
             let caller = ink::env::caller::<ink::env::DefaultEnvironment>();
-            self.remove_jure_from_pool_or_assert(caller)?;
+            self.remove_juror_from_pool_or_assert(caller)?;
             Ok(())
         }
 
-        /// Assigned jure can confirm his participation in dispute
+        /// Assigned juror can confirm his participation in dispute
         #[ink(message, payable)]
-        pub fn confirm_jure_participation_in_dispute(
+        pub fn confirm_juror_participation_in_dispute(
             &mut self,
             dispute_id: DisputeId,
         ) -> Result<()> {
@@ -237,9 +237,9 @@ pub mod bright_disputes {
             self.assert_transferred(dispute.escrow())?;
 
             let caller = ink::env::caller::<ink::env::DefaultEnvironment>();
-            let mut jure = self.get_jure_or_assert(caller)?;
-            jure.confirm_participation_in_dispute(dispute_id)?;
-            self.update_jure(jure);
+            let mut juror = self.get_juror_or_assert(caller)?;
+            juror.confirm_participation_in_dispute(dispute_id)?;
+            self.update_juror(juror);
 
             dispute.increment_deposit();
             self.update_dispute(dispute);
@@ -256,16 +256,16 @@ pub mod bright_disputes {
             self.assert_transferred(dispute.escrow())?;
 
             let caller = ink::env::caller::<ink::env::DefaultEnvironment>();
-            let mut jure = self.get_jure_or_assert(caller)?;
-            jure.confirm_participation_in_dispute(dispute_id)?;
-            self.update_jure(jure);
+            let mut juror = self.get_juror_or_assert(caller)?;
+            juror.confirm_participation_in_dispute(dispute_id)?;
+            self.update_juror(juror);
 
             dispute.increment_deposit();
             self.update_dispute(dispute);
             Ok(())
         }
 
-        /// Unregister jure from the active juries pool.
+        /// Unregister juror from the active juries pool.
         #[ink(message)]
         pub fn process_dispute_round(&mut self, dispute_id: DisputeId) -> Result<()> {
             let timestamp = self.env().block_timestamp();
@@ -275,17 +275,17 @@ pub mod bright_disputes {
                     BrightDisputesError::DisputeRoundDeadlineReached => {
                         // Check if judge counted the votes.
                         if let Some(judge_id) = dispute.judge() {
-                            let judge = self.get_jure_or_assert(judge_id)?;
+                            let judge = self.get_juror_or_assert(judge_id)?;
                             if judge.is_requested_for_action(dispute_id) {
                                 dispute.move_to_banned(judge_id)?;
                             }
                         }
 
                         // Check if juries votes
-                        for jure_id in dispute.juries() {
-                            let jure = self.get_jure_or_assert(jure_id)?;
-                            if jure.is_requested_for_action(dispute_id) {
-                                dispute.move_to_banned(jure_id)?;
+                        for juror_id in dispute.juries() {
+                            let juror = self.get_juror_or_assert(juror_id)?;
+                            if juror.is_requested_for_action(dispute_id) {
+                                dispute.move_to_banned(juror_id)?;
                             }
                         }
 
@@ -295,10 +295,10 @@ pub mod bright_disputes {
 
                     BrightDisputesError::MajorityOfVotesNotReached => {
                         // Check if juries votes
-                        for jure_id in dispute.juries() {
-                            let jure = self.get_jure_or_assert(jure_id)?;
-                            if jure.is_requested_for_action(dispute_id) {
-                                dispute.move_to_banned(jure_id)?;
+                        for juror_id in dispute.juries() {
+                            let juror = self.get_juror_or_assert(juror_id)?;
+                            if juror.is_requested_for_action(dispute_id) {
+                                dispute.move_to_banned(juror_id)?;
                             }
                         }
 
@@ -345,8 +345,8 @@ pub mod bright_disputes {
             }
 
             // Add juries, who were not banned.
-            for jure_id in dispute.juries() {
-                accounts.push(jure_id);
+            for juror_id in dispute.juries() {
+                accounts.push(juror_id);
             }
 
             // Split deposit and transfer founds.
@@ -376,12 +376,12 @@ pub mod bright_disputes {
                 .ok_or(BrightDisputesError::DisputeNotExist)
         }
 
-        fn remove_jure_from_pool_or_assert(&mut self, jure_id: AccountId) -> Result<()> {
-            if let Some(index) = self.juries_pool.iter().position(|&j| j == jure_id) {
+        fn remove_juror_from_pool_or_assert(&mut self, juror_id: AccountId) -> Result<()> {
+            if let Some(index) = self.juries_pool.iter().position(|&j| j == juror_id) {
                 self.juries_pool.remove(index);
                 return Ok(());
             }
-            return Err(BrightDisputesError::NotRegisteredAsJure);
+            return Err(BrightDisputesError::NotRegisteredAsJuror);
         }
 
         fn get_random_juries_from_pool(
@@ -393,8 +393,8 @@ pub mod bright_disputes {
             let filtered_pool: Vec<AccountId> = self
                 .juries_pool
                 .iter()
-                .filter(|jure_id| !except_juries.contains(&jure_id))
-                .map(|&jure_id| jure_id)
+                .filter(|juror_id| !except_juries.contains(&juror_id))
+                .map(|&juror_id| juror_id)
                 .collect();
 
             let pool_len: u64 = filtered_pool.len().try_into().unwrap();
@@ -416,10 +416,10 @@ pub mod bright_disputes {
             random + seed
         }
 
-        fn assert_jure_not_in_pool(&self, jure_id: AccountId) -> Result<()> {
+        fn assert_juror_not_in_pool(&self, juror_id: AccountId) -> Result<()> {
             for j in &self.juries_pool {
-                if *j == jure_id {
-                    return Err(BrightDisputesError::JureAlreadyRegistered);
+                if *j == juror_id {
+                    return Err(BrightDisputesError::JurorAlreadyRegistered);
                 }
             }
             return Ok(());
@@ -466,20 +466,20 @@ pub mod bright_disputes {
             let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
             set_caller::<DefaultEnvironment>(accounts.charlie);
             bright_disputes
-                .register_as_an_active_jure()
-                .expect("Failed to register charlie as a jure!");
+                .register_as_an_active_juror()
+                .expect("Failed to register charlie as a juror!");
             set_caller::<DefaultEnvironment>(accounts.eve);
             bright_disputes
-                .register_as_an_active_jure()
-                .expect("Failed to register eve as a jure!");
+                .register_as_an_active_juror()
+                .expect("Failed to register eve as a juror!");
             set_caller::<DefaultEnvironment>(accounts.frank);
             bright_disputes
-                .register_as_an_active_jure()
-                .expect("Failed to register frank as a jure!");
+                .register_as_an_active_juror()
+                .expect("Failed to register frank as a juror!");
             set_caller::<DefaultEnvironment>(accounts.django);
             bright_disputes
-                .register_as_an_active_jure()
-                .expect("Failed to register django as a jure!");
+                .register_as_an_active_juror()
+                .expect("Failed to register django as a juror!");
 
             assert_eq!(bright_disputes.juries_pool.len(), 4);
             assert!(bright_disputes.juries.contains(accounts.charlie));
@@ -719,9 +719,9 @@ pub mod bright_disputes {
             assert_eq!(result, Ok(()));
         }
 
-        /// Test jure registration
+        /// Test juror registration
         #[ink::test]
-        fn jure_register() {
+        fn juror_register() {
             let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
             set_caller::<DefaultEnvironment>(accounts.alice);
 
@@ -730,50 +730,50 @@ pub mod bright_disputes {
             assert!(!bright_disputes.juries.contains(accounts.alice));
 
             // Success
-            let result = bright_disputes.register_as_an_active_jure();
+            let result = bright_disputes.register_as_an_active_juror();
             assert_eq!(result, Ok(()));
             assert_eq!(bright_disputes.juries_pool.len(), 1);
             assert!(bright_disputes.juries.contains(accounts.alice));
 
-            // Failed to register already registered jure
-            let result = bright_disputes.register_as_an_active_jure();
-            assert_eq!(result, Err(BrightDisputesError::JureAlreadyRegistered));
+            // Failed to register already registered juror
+            let result = bright_disputes.register_as_an_active_juror();
+            assert_eq!(result, Err(BrightDisputesError::JurorAlreadyRegistered));
             assert_eq!(bright_disputes.juries_pool.len(), 1);
             assert!(bright_disputes.juries.contains(accounts.alice));
         }
 
-        /// Test jure unregistration
+        /// Test juror unregistration
         #[ink::test]
-        fn jure_unregister() {
+        fn juror_unregister() {
             let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
             set_caller::<DefaultEnvironment>(accounts.alice);
 
             let mut bright_disputes = BrightDisputes::new();
 
-            // Failed to unregister jure, no jure in the pool
-            let result = bright_disputes.unregister_as_an_active_jure();
-            assert_eq!(result, Err(BrightDisputesError::NotRegisteredAsJure));
+            // Failed to unregister juror, no juror in the pool
+            let result = bright_disputes.unregister_as_an_active_juror();
+            assert_eq!(result, Err(BrightDisputesError::NotRegisteredAsJuror));
             assert_eq!(bright_disputes.juries_pool.len(), 0);
             assert!(!bright_disputes.juries.contains(accounts.alice));
 
             bright_disputes
-                .register_as_an_active_jure()
-                .expect("Failed to register a jure!");
+                .register_as_an_active_juror()
+                .expect("Failed to register a juror!");
 
             // Success
-            let result = bright_disputes.unregister_as_an_active_jure();
+            let result = bright_disputes.unregister_as_an_active_juror();
             assert_eq!(result, Ok(()));
             assert_eq!(bright_disputes.juries_pool.len(), 0);
             assert!(bright_disputes.juries.contains(accounts.alice));
 
-            // Failed to unregister jure, jure already unregistered
-            let result = bright_disputes.unregister_as_an_active_jure();
-            assert_eq!(result, Err(BrightDisputesError::NotRegisteredAsJure));
+            // Failed to unregister juror, juror already unregistered
+            let result = bright_disputes.unregister_as_an_active_juror();
+            assert_eq!(result, Err(BrightDisputesError::NotRegisteredAsJuror));
         }
 
         // Test juries confirmation to the dispute case.
         #[ink::test]
-        fn confirm_judge_and_jure_participation_in_dispute() {
+        fn confirm_judge_and_juror_participation_in_dispute() {
             let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
             set_caller::<DefaultEnvironment>(accounts.alice);
 
@@ -783,10 +783,10 @@ pub mod bright_disputes {
             // Register charlie, django, eve and frank as a juries.
             register_valid_juries(&mut bright_disputes);
 
-            // Fail to confirm jure, when he is not assigned.
+            // Fail to confirm juror, when he is not assigned.
             set_caller::<DefaultEnvironment>(accounts.charlie);
-            let result = bright_disputes.confirm_jure_participation_in_dispute(dispute_id);
-            assert_eq!(result, Err(BrightDisputesError::JureIsNotAssignedToDispute));
+            let result = bright_disputes.confirm_juror_participation_in_dispute(dispute_id);
+            assert_eq!(result, Err(BrightDisputesError::JurorIsNotAssignedToDispute));
 
             // Switch to "PickingJuriesAndJudge" state.
             set_caller::<DefaultEnvironment>(accounts.alice);
@@ -814,29 +814,29 @@ pub mod bright_disputes {
             assert_eq!(result, Ok(()));
 
             // Confirm juries
-            for jure in &dispute.juries() {
-                set_caller::<DefaultEnvironment>(*jure);
+            for juror in &dispute.juries() {
+                set_caller::<DefaultEnvironment>(*juror);
 
-                // Fail to confirm jure, invalid escrow
+                // Fail to confirm juror, invalid escrow
                 set_value_transferred::<DefaultEnvironment>(5);
                 assert_eq!(
-                    bright_disputes.confirm_jure_participation_in_dispute(dispute_id),
+                    bright_disputes.confirm_juror_participation_in_dispute(dispute_id),
                     Err(BrightDisputesError::InvalidEscrowAmount)
                 );
 
                 // Success
                 set_value_transferred::<DefaultEnvironment>(10);
                 assert_eq!(
-                    bright_disputes.confirm_jure_participation_in_dispute(dispute_id),
+                    bright_disputes.confirm_juror_participation_in_dispute(dispute_id),
                     Ok(())
                 );
             }
 
             // Failed to confirm twice
-            let result = bright_disputes.confirm_jure_participation_in_dispute(dispute_id);
+            let result = bright_disputes.confirm_juror_participation_in_dispute(dispute_id);
             assert_eq!(
                 result,
-                Err(BrightDisputesError::JureAlreadyConfirmedDispute)
+                Err(BrightDisputesError::JurorAlreadyConfirmedDispute)
             );
 
             // Switch to "Voting" state.
@@ -871,32 +871,32 @@ pub mod bright_disputes {
             // Assign all juries
             let assigned_juries = dispute.juries();
 
-            let mut jure_not_assigned = vec![
+            let mut juror_not_assigned = vec![
                 accounts.charlie,
                 accounts.eve,
                 accounts.frank,
                 accounts.django,
             ];
-            jure_not_assigned.retain(|id| !assigned_juries.contains(id));
+            juror_not_assigned.retain(|id| !assigned_juries.contains(id));
 
-            // Confirm jure participation
+            // Confirm juror participation
             set_caller::<DefaultEnvironment>(assigned_juries[0]);
             bright_disputes
-                .confirm_jure_participation_in_dispute(dispute_id)
+                .confirm_juror_participation_in_dispute(dispute_id)
                 .expect("Failed confirm juries participation!");
 
             set_caller::<DefaultEnvironment>(assigned_juries[1]);
             bright_disputes
-                .confirm_jure_participation_in_dispute(dispute_id)
+                .confirm_juror_participation_in_dispute(dispute_id)
                 .expect("Failed confirm juries participation!");
 
             set_caller::<DefaultEnvironment>(assigned_juries[2]);
             bright_disputes
-                .confirm_jure_participation_in_dispute(dispute_id)
+                .confirm_juror_participation_in_dispute(dispute_id)
                 .expect("Failed confirm juries participation!");
 
             // Assign judge
-            set_caller::<DefaultEnvironment>(jure_not_assigned[0]);
+            set_caller::<DefaultEnvironment>(juror_not_assigned[0]);
             bright_disputes
                 .confirm_judge_participation_in_dispute(dispute_id)
                 .expect("Failed to confirm judge participation!");
@@ -968,32 +968,32 @@ pub mod bright_disputes {
             // Assign all juries
             let assigned_juries = dispute.juries();
 
-            let mut jure_not_assigned = vec![
+            let mut juror_not_assigned = vec![
                 accounts.charlie,
                 accounts.eve,
                 accounts.frank,
                 accounts.django,
             ];
-            jure_not_assigned.retain(|id| !assigned_juries.contains(id));
+            juror_not_assigned.retain(|id| !assigned_juries.contains(id));
 
-            // Confirm jure participation
+            // Confirm juror participation
             set_caller::<DefaultEnvironment>(assigned_juries[0]);
             bright_disputes
-                .confirm_jure_participation_in_dispute(dispute_id)
+                .confirm_juror_participation_in_dispute(dispute_id)
                 .expect("Failed confirm juries participation!");
 
             set_caller::<DefaultEnvironment>(assigned_juries[1]);
             bright_disputes
-                .confirm_jure_participation_in_dispute(dispute_id)
+                .confirm_juror_participation_in_dispute(dispute_id)
                 .expect("Failed confirm juries participation!");
 
             set_caller::<DefaultEnvironment>(assigned_juries[2]);
             bright_disputes
-                .confirm_jure_participation_in_dispute(dispute_id)
+                .confirm_juror_participation_in_dispute(dispute_id)
                 .expect("Failed confirm juries participation!");
 
             // Assign judge
-            set_caller::<DefaultEnvironment>(jure_not_assigned[0]);
+            set_caller::<DefaultEnvironment>(juror_not_assigned[0]);
             bright_disputes
                 .confirm_judge_participation_in_dispute(dispute_id)
                 .expect("Failed to confirm judge participation!");
@@ -1022,7 +1022,7 @@ pub mod bright_disputes {
             assert_eq!(result, Err(BrightDisputesError::NotAuthorized));
 
             // Count the votes, dispute ends
-            set_caller::<DefaultEnvironment>(jure_not_assigned[0]);
+            set_caller::<DefaultEnvironment>(juror_not_assigned[0]);
             let result = bright_disputes.process_dispute_round(dispute_id);
             assert_eq!(result, Ok(()));
         }
@@ -1052,32 +1052,32 @@ pub mod bright_disputes {
             // Assign all juries
             let assigned_juries = dispute.juries();
 
-            let mut jure_not_assigned = vec![
+            let mut juror_not_assigned = vec![
                 accounts.charlie,
                 accounts.eve,
                 accounts.frank,
                 accounts.django,
             ];
-            jure_not_assigned.retain(|id| !assigned_juries.contains(id));
+            juror_not_assigned.retain(|id| !assigned_juries.contains(id));
 
-            // Confirm jure participation
+            // Confirm juror participation
             set_caller::<DefaultEnvironment>(assigned_juries[0]);
             bright_disputes
-                .confirm_jure_participation_in_dispute(dispute_id)
+                .confirm_juror_participation_in_dispute(dispute_id)
                 .expect("Failed confirm juries participation!");
 
             set_caller::<DefaultEnvironment>(assigned_juries[1]);
             bright_disputes
-                .confirm_jure_participation_in_dispute(dispute_id)
+                .confirm_juror_participation_in_dispute(dispute_id)
                 .expect("Failed confirm juries participation!");
 
             set_caller::<DefaultEnvironment>(assigned_juries[2]);
             bright_disputes
-                .confirm_jure_participation_in_dispute(dispute_id)
+                .confirm_juror_participation_in_dispute(dispute_id)
                 .expect("Failed confirm juries participation!");
 
             // Assign judge
-            set_caller::<DefaultEnvironment>(jure_not_assigned[0]);
+            set_caller::<DefaultEnvironment>(juror_not_assigned[0]);
             bright_disputes
                 .confirm_judge_participation_in_dispute(dispute_id)
                 .expect("Failed to confirm judge participation!");
@@ -1102,7 +1102,7 @@ pub mod bright_disputes {
             assert_eq!(result, Ok(()));
 
             // Majority of votes not reached, new round.
-            set_caller::<DefaultEnvironment>(jure_not_assigned[0]);
+            set_caller::<DefaultEnvironment>(juror_not_assigned[0]);
             let result = bright_disputes.process_dispute_round(dispute_id);
             assert_eq!(result, Ok(()));
 
@@ -1137,32 +1137,32 @@ pub mod bright_disputes {
             // Assign all juries
             let assigned_juries = dispute.juries();
 
-            let mut jure_not_assigned = vec![
+            let mut juror_not_assigned = vec![
                 accounts.charlie,
                 accounts.eve,
                 accounts.frank,
                 accounts.django,
             ];
-            jure_not_assigned.retain(|id| !assigned_juries.contains(id));
+            juror_not_assigned.retain(|id| !assigned_juries.contains(id));
 
-            // Confirm jure participation
+            // Confirm juror participation
             set_caller::<DefaultEnvironment>(assigned_juries[0]);
             bright_disputes
-                .confirm_jure_participation_in_dispute(dispute_id)
+                .confirm_juror_participation_in_dispute(dispute_id)
                 .expect("Failed confirm juries participation!");
 
             set_caller::<DefaultEnvironment>(assigned_juries[1]);
             bright_disputes
-                .confirm_jure_participation_in_dispute(dispute_id)
+                .confirm_juror_participation_in_dispute(dispute_id)
                 .expect("Failed confirm juries participation!");
 
             set_caller::<DefaultEnvironment>(assigned_juries[2]);
             bright_disputes
-                .confirm_jure_participation_in_dispute(dispute_id)
+                .confirm_juror_participation_in_dispute(dispute_id)
                 .expect("Failed confirm juries participation!");
 
             // Assign judge
-            set_caller::<DefaultEnvironment>(jure_not_assigned[0]);
+            set_caller::<DefaultEnvironment>(juror_not_assigned[0]);
             bright_disputes
                 .confirm_judge_participation_in_dispute(dispute_id)
                 .expect("Failed to confirm judge participation!");
@@ -1188,7 +1188,7 @@ pub mod bright_disputes {
                 .expect("Failed process dispute round!");
 
             // Count the votes, dispute ends
-            set_caller::<DefaultEnvironment>(jure_not_assigned[0]);
+            set_caller::<DefaultEnvironment>(juror_not_assigned[0]);
             bright_disputes
                 .process_dispute_round(dispute_id)
                 .expect("Failed process dispute round!");
