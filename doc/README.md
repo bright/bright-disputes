@@ -111,7 +111,7 @@ Now is the judge role to count the votes. In our case judge, who is `Juror4`, wi
     
 </center> 
 
-We can check if the dispute result was set:
+Finally we can check the result of the dispute
 
 <center>
     
@@ -125,7 +125,7 @@ The last stage of the dispute process is to split the dispute deposit, by callin
 * defendant
 * judge
 * juries - who where in the majority of the votes
-For all juries and judges who haven't fullfil their duties, their escrow will be lost and split to others. The same rule stands for the juries who were in the minority of the votes.
+For all juries and judges who have not fulfil their duties, their escrow will be lost and split to others. The same rule stands for the juries who were in the minority of the votes.
 
 <center>
     

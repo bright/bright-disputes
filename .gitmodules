@@ -1,0 +1,3 @@
+[submodule "aleph-node"]
+	path = aleph-node
+	url = git@github.com:bright/aleph-node.git

@@ -4,9 +4,15 @@ This project is a dApp for raising and solving the disputes on the Substrate-bas
 ## Prerequisites
 1. `cargo-contract 3.0.1`
 2. `ink-wrapper 0.5.0`
-2. `rustc-1.69`
+3. `rustc-1.69`
 
 ## Build (manually)
+Before building a smart contract we need to download submodules:
+```
+git submodule update --init --recursive
+```
+
+### Building smart contract
 To build a smart contract locally we can run:
 ```
 cargo contract build --release --manifest-path contract/Cargo.toml
@@ -19,6 +25,9 @@ contract/target/ink/bright_disputes.contract
 ```
 and they can be deployed on the node.
 
+### Building CLI
+Follow the instructions from the [README](https://github.com/bright/bright-disputes/blob/main/cli/README.md). file.
+
 ## Build (docker)
 Smart contract can be build with the Docker:
 ```
@@ -29,7 +38,7 @@ This will export *bright_disputes.json*, *bright_disputes.wasm*, *bright_dispute
 ## Build (script)
 The last way to build and run Bright Disputes is to use a script. We simplify the whole process, by providing a `scripts/deploy.sh` script. It will starts aleph node, building and deploying smart contract on it. Script will also pre-fund [accounts](https://github.com/bright/bright-disputes/blob/main/doc/accounts), which can be used to play/test with the smart contract. More details can be found in the [showcase](https://github.com/bright/bright-disputes/blob/main/doc/README.md). Script is using three docker images:
 * disputes-node - is an image of the aleph node, where our smart contract is going to be deployed
-* disputes-cliain - is an image of `cliain` tool, which is a wrapper over `substrate-api-client` library. It simplify calls over Substrate chain extrinsic.
+* disputes-cliain - is a image of `cliain` tool, which is a wrapper over `substrate-api-client` library. It simplify calls over Substrate chain extrinsic.
 * disputes-ink-dev - this image contains environment for building a smart contract
 
 To run a script just type:
