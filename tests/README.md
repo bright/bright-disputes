@@ -8,7 +8,7 @@ cargo install --force --locked cargo-contract --version 3.0.1
 
 Install ink-wrapper
 ```
-cargo install ink-wrapper --locked --force --version 0.5.0
+cargo +nightly-2023-04-19 install ink-wrapper --locked --force --version 0.5.0
 ```
 
 # Build
