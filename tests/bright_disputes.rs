@@ -4,8 +4,8 @@ use scale::Encode as _;
 
 #[allow(dead_code)]
 pub const CODE_HASH: [u8; 32] = [
-    63, 230, 117, 175, 231, 131, 179, 199, 172, 28, 123, 137, 34, 122, 220, 202, 41, 180, 72, 87,
-    122, 91, 90, 194, 202, 106, 198, 171, 24, 170, 237, 183,
+    179, 189, 99, 47, 197, 174, 131, 44, 115, 1, 178, 61, 71, 213, 130, 167, 213, 69, 39, 112, 144,
+    89, 168, 255, 17, 165, 66, 233, 165, 43, 229, 145,
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, scale::Encode, scale::Decode)]
@@ -155,12 +155,6 @@ impl ink_wrapper_types::EventSource for Instance {
     type Event = event::Event;
 }
 
-#[allow(dead_code)]
-pub fn upload() -> ink_wrapper_types::UploadCall {
-    let wasm = include_bytes!("../contract/target/ink/bright_disputes.wasm");
-    ink_wrapper_types::UploadCall::new(wasm.to_vec(), CODE_HASH)
-}
-
 impl Instance {
     /// Constructor
     #[allow(dead_code, clippy::too_many_arguments)]
@@ -282,11 +276,12 @@ impl Instance {
 
     ///  Voting, only juror can do it.
     #[allow(dead_code, clippy::too_many_arguments)]
-    pub fn vote(&self, dispute_id: u32, vote: u8) -> ink_wrapper_types::ExecCall {
+    pub fn vote(&self, dispute_id: u32, vote: u8, proof: Vec<u8>) -> ink_wrapper_types::ExecCall {
         let data = {
             let mut data = vec![8, 59, 226, 96];
             dispute_id.encode_to(&mut data);
             vote.encode_to(&mut data);
+            proof.encode_to(&mut data);
             data
         };
         ink_wrapper_types::ExecCall::new(self.account_id, data)
@@ -333,6 +328,17 @@ impl Instance {
             data
         };
         ink_wrapper_types::ExecCallNeedsValue::new(self.account_id, data)
+    }
+
+    #[allow(dead_code, clippy::too_many_arguments)]
+    pub fn count_the_votes(&self, dispute_id: u32, proof: Vec<u8>) -> ink_wrapper_types::ExecCall {
+        let data = {
+            let mut data = vec![231, 126, 247, 3];
+            dispute_id.encode_to(&mut data);
+            proof.encode_to(&mut data);
+            data
+        };
+        ink_wrapper_types::ExecCall::new(self.account_id, data)
     }
 
     ///  Unregister juror from the active juries pool.

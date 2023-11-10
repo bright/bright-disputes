@@ -10,6 +10,10 @@ pub struct Application {
     pub metadata_path: PathBuf,
     pub node_address: String,
     pub contract_address: Option<String>,
+    pub vote_pk: PathBuf,
+    pub verdict_none_pk: PathBuf,
+    pub verdict_negative_pk: PathBuf,
+    pub verdict_positive_pk: PathBuf,
 }
 
 impl Default for Application {
@@ -19,6 +23,10 @@ impl Default for Application {
             metadata_path: "../contract/target/ink/bright_disputes.json".into(),
             node_address: "ws://127.0.0.1:9944".into(),
             contract_address: None,
+            vote_pk: "../scripts/docker/keys/vote.groth16.pk.bytes".into(),
+            verdict_none_pk: "../scripts/docker/keys/verdict_none.groth16.pk.bytes".into(),
+            verdict_negative_pk: "../scripts/docker/keys/verdict_negative.groth16.pk.bytes".into(),
+            verdict_positive_pk: "../scripts/docker/keys/verdict_positive.groth16.pk.bytes".into(),            
         }
     }
 }

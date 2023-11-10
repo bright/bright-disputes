@@ -2,7 +2,7 @@ use ink::{prelude::vec::Vec, primitives::AccountId};
 
 use crate::{
     error::BrightDisputesError,
-    types::{DisputeId, Result},
+    types::{DisputeId, PublicKey, Result},
 };
 
 pub trait JuriesMap {
@@ -37,6 +37,7 @@ pub struct Juror {
     id: AccountId,
     state: State,
     dispute_id: Option<DisputeId>,
+    public_key: Option<PublicKey>,
 }
 
 impl Juror {
@@ -46,6 +47,7 @@ impl Juror {
             id,
             state: State::Pending,
             dispute_id: None,
+            public_key: None,
         }
     }
 
@@ -101,13 +103,22 @@ impl Juror {
         Ok(())
     }
 
-    pub fn confirm_participation_in_dispute(&mut self, dispute_id: DisputeId) -> Result<()> {
+    pub fn public_key(&self) -> Option<PublicKey> {
+        self.public_key.clone()
+    }
+
+    pub fn confirm_participation_in_dispute_and_store_pub_key(
+        &mut self,
+        dispute_id: DisputeId,
+        public_key: PublicKey,
+    ) -> Result<()> {
         if self.dispute_id.is_none() || self.dispute_id.unwrap() != dispute_id {
             return Err(BrightDisputesError::JurorIsNotAssignedToDispute);
         } else if self.state != State::Assigned {
             return Err(BrightDisputesError::JurorAlreadyConfirmedDispute);
         }
         self.state = State::Confirmed;
+        self.public_key = Some(public_key);
         Ok(())
     }
 }
@@ -219,7 +230,8 @@ mod tests {
         let result = juror.action_done(dispute_id);
         assert_eq!(result, Err(BrightDisputesError::JurorInvalidState));
 
-        juror.assign_to_dispute(dispute_id)
+        juror
+            .assign_to_dispute(dispute_id)
             .expect("Failed to assign juror to dispute!");
 
         // Failed, no action assigned
@@ -230,7 +242,8 @@ mod tests {
         let result = juror.request_for_action(dispute_id);
         assert_eq!(result, Err(BrightDisputesError::JurorInvalidState));
 
-        juror.confirm_participation_in_dispute(dispute_id)
+        juror
+            .confirm_participation_in_dispute_and_store_pub_key(dispute_id, vec![])
             .expect("Failed to confirm juror participation in dispute!");
 
         // Success
@@ -269,23 +282,26 @@ mod tests {
     }
 
     #[ink::test]
-    fn confirm_participation_in_dispute() {
+    fn confirm_participation_in_dispute_and_store_pub_key() {
         let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
         let mut juror = Juror::create(accounts.alice);
 
         // Failed to confirm participation in dispute, when juror is not assigned.
-        let result = juror.confirm_participation_in_dispute(1);
-        assert_eq!(result, Err(BrightDisputesError::JurorIsNotAssignedToDispute));
+        let result = juror.confirm_participation_in_dispute_and_store_pub_key(1, vec![]);
+        assert_eq!(
+            result,
+            Err(BrightDisputesError::JurorIsNotAssignedToDispute)
+        );
 
         // Assign juror to dispute.
         juror.assign_to_dispute(1).expect("Unable to add juror!");
 
         // Success
-        let result = juror.confirm_participation_in_dispute(1);
+        let result = juror.confirm_participation_in_dispute_and_store_pub_key(1, vec![]);
         assert_eq!(result, Ok(()));
 
         // Failed to confirm participation in dispute, juror already confirmed.
-        let result = juror.confirm_participation_in_dispute(1);
+        let result = juror.confirm_participation_in_dispute_and_store_pub_key(1, vec![]);
         assert_eq!(
             result,
             Err(BrightDisputesError::JurorAlreadyConfirmedDispute)

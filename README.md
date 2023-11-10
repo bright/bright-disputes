@@ -74,3 +74,11 @@ Finally we can run a e2e tests by calling:
 ```
 cargo +nightly test --release
 ```
+
+# TODO:
+* Store priv keys for jurors and judge in the JSON file and print it on the cmd
+* Judge should issue a verdict and point the banned juries...
+* Run/Fix all unit test
+* Run/Fix all e2e test
+* Update documentation + show cases
+

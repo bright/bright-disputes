@@ -17,6 +17,7 @@ pub enum BrightDisputesError {
     JurorAlreadyAssignedToDispute,
     JurorIsNotAssignedToDispute,
     JurorAlreadyConfirmedDispute,
+    JurorHasNotConfirmedDispute,
     JurorInvalidState,
     JurorNotExist,
     JuriesPoolIsToSmall,

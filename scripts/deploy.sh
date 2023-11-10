@@ -40,7 +40,7 @@ JUROR_7=//Juror7
 JUROR_7_PUBKEY=5F71WWxPWDKRJt5x4LudQ3k94GCC8WATnRm86FWmvdEYJpnB
 
 # tokenomics
-TOKEN_PER_PERSON=1000
+TOKEN_PER_PERSON=500000
 
 # env
 NODE="ws://127.0.0.1:9944"
@@ -122,19 +122,20 @@ docker_ink_dev() {
 build() {
     cd "${SCRIPT_DIR}"/..
 
+    log_progress "Start bulding smart contract..."
     docker_ink_dev "cargo contract build --release --manifest-path contract/Cargo.toml 1>/dev/null"
     log_progress "✅ Contract was built"
 }
 
 build_cli() {
-  cd "${SCRIPT_DIR}"/..
-  docker_ink_dev "cargo +nightly-2023-04-16 build --release --manifest-path cli/Cargo.toml 1>/dev/null"
-  log_progress "✅ CLI was built"
+    cd "${SCRIPT_DIR}"/..
+    docker_ink_dev "cargo +nightly-2023-04-16 build --release --manifest-path cli/Cargo.toml 1>/dev/null"
+    log_progress "✅ CLI was built"
 
-  cd "${SCRIPT_DIR}"/../cli/
-  docker_ink_dev "./target/release/bright_disputes_cli set-contract ${CONTRACT_ADDRESS} 1>/dev/null"
+    cd "${SCRIPT_DIR}"/../cli/
+    docker_ink_dev "./target/release/bright_disputes_cli set-contract ${CONTRACT_ADDRESS} 1>/dev/null"
 
-  log_progress "✅ Shielder CLI was set up"
+    log_progress "✅ BrightDisputes CLI was set up"
 }
 
 random_salt() {
@@ -149,7 +150,45 @@ deploy_contract() {
     cd "${SCRIPT_DIR}"/..
     CONTRACT_ADDRESS=$(contract_instantiate "--manifest-path contract/Cargo.toml" | jq -r '.contract')
     export CONTRACT_ADDRESS
-    log_progress "Contract address: ${CONTRACT_ADDRESS}"
+    log_progress "✅ Contract address: ${CONTRACT_ADDRESS}"
+}
+
+contract_call() {
+    docker_ink_dev "cargo contract call --manifest-path contract/Cargo.toml --quiet --skip-confirm --url ${NODE} ${1}"
+}
+
+generate_relation_keys() {
+    $DOCKER_SH \
+        -v "${SCRIPT_DIR}/docker/keys:/workdir" \
+        -w "/workdir" \
+        "${CLIAIN_IMAGE}" \
+        -c "/usr/local/bin/cliain snark-relation generate-keys ${1} ${2:-}"
+
+    log_progress "✅ Generated keys for '${1}' relation"
+}
+
+generate_keys() {
+    generate_relation_keys "vote"
+    generate_relation_keys "verdict-positive"
+    generate_relation_keys "verdict-none"
+    generate_relation_keys "verdict-negative"
+}
+
+register_vk() {
+    log_progress "Registering..."
+    VOTE_VK_BYTES="0x$(xxd -ps <"${SCRIPT_DIR}"/docker/keys/vote.groth16.vk.bytes | tr -d '\n')"
+    contract_call "--contract  ${CONTRACT_ADDRESS} --message register_vk --args Vote ${VOTE_VK_BYTES} --suri ${ADMIN} --execute" 1>/dev/null
+
+    VERDICT_VK_BYTES="0x$(xxd -ps <"${SCRIPT_DIR}"/docker/keys/verdict_positive.groth16.vk.bytes | tr -d '\n')"
+    contract_call "--contract  ${CONTRACT_ADDRESS} --message register_vk --args VerdictPositive ${VERDICT_VK_BYTES} --suri ${ADMIN} --execute" 1>/dev/null
+
+    VERDICT_VK_BYTES="0x$(xxd -ps <"${SCRIPT_DIR}"/docker/keys/verdict_none.groth16.vk.bytes | tr -d '\n')"
+    contract_call "--contract  ${CONTRACT_ADDRESS} --message register_vk --args VerdictNone ${VERDICT_VK_BYTES} --suri ${ADMIN} --execute" 1>/dev/null
+
+    VERDICT_VK_BYTES="0x$(xxd -ps <"${SCRIPT_DIR}"/docker/keys/verdict_negative.groth16.vk.bytes | tr -d '\n')"
+    contract_call "--contract  ${CONTRACT_ADDRESS} --message register_vk --args VerdictNegative ${VERDICT_VK_BYTES} --suri ${ADMIN} --execute" 1>/dev/null
+
+    log_progress "✅ Verification keys registered"
 }
 
 store_contract_addres() {
@@ -172,15 +211,14 @@ transfer() {
 
 prefund_users() {
     for recipient in "${DAMIAN_PUBKEY}" "${HANS_PUBKEY}" "${MICHAL_PUBKEY}" "${OWNER_PUBKEY}" "${DEFENDANT_PUBKEY}" "${JUROR_1_PUBKEY}" \
-     "${JUROR_2_PUBKEY}" "${JUROR_3_PUBKEY}" "${JUROR_4_PUBKEY}" "${JUROR_5_PUBKEY}" "${JUROR_6_PUBKEY}" "${JUROR_7_PUBKEY}"; do
+        "${JUROR_2_PUBKEY}" "${JUROR_3_PUBKEY}" "${JUROR_4_PUBKEY}" "${JUROR_5_PUBKEY}" "${JUROR_6_PUBKEY}" "${JUROR_7_PUBKEY}"; do
         transfer ${recipient}
     done
 }
 
 generate_ink_types() {
-  docker_ink_dev "ink-wrapper -m contract/target/ink/bright_disputes.json | rustfmt +nightly-2023-04-16 --edition 2021 > cli/src/bright_disputes_ink.rs"
-
-  log_progress "✅ Ink types were generated"
+    docker_ink_dev "ink-wrapper -m contract/target/ink/bright_disputes.json | rustfmt +nightly-2023-04-16 --edition 2021 > cli/src/bright_disputes_ink.rs"
+    log_progress "✅ Ink types were generated"
 }
 
 # ------------------------------------------------------------------------------------------------------
@@ -197,6 +235,9 @@ deploy() {
     # prefund users
     prefund_users
 
+    # generate keys
+    generate_keys
+
     # build contracts
     build
 
@@ -208,6 +249,9 @@ deploy() {
 
     # store data
     store_contract_addres
+
+    # register verification key
+    register_vk
 
     # build cli
     build_cli

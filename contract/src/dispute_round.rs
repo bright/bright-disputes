@@ -54,10 +54,8 @@ impl DisputeRound {
         now: Timestamp,
     ) -> Result<()> {
         if let Err(e) = self.try_to_switch_to_next_state(contract, dispute, now) {
-            if e != BrightDisputesError::MajorityOfVotesNotReached {
-                if now >= self.state_deadline {
-                    return Err(BrightDisputesError::DisputeRoundDeadlineReached);
-                }
+            if now >= self.state_deadline {
+                return Err(BrightDisputesError::DisputeRoundDeadlineReached);
             }
             return Err(e);
         }
@@ -67,6 +65,14 @@ impl DisputeRound {
     // Assert when state is not in "Voting" state.
     pub fn assert_if_not_voting_time(&self) -> Result<()> {
         if self.state != RoundState::Voting {
+            return Err(BrightDisputesError::WrongDisputeRoundState);
+        }
+        Ok(())
+    }
+
+    // Assert when state is not in "CountingTheVotes" state.
+    pub fn assert_if_not_counting_the_votes_time(&self) -> Result<()> {
+        if self.state != RoundState::CountingTheVotes {
             return Err(BrightDisputesError::WrongDisputeRoundState);
         }
         Ok(())
@@ -101,7 +107,7 @@ impl DisputeRound {
                 self.state_deadline = Self::deadline(now, Self::VOTING_TIME);
             }
             RoundState::Voting => self.handle_voting(contract, dispute, now)?,
-            RoundState::CountingTheVotes => self.handle_votes_counting(contract, dispute)?,
+            RoundState::CountingTheVotes => return Err(BrightDisputesError::InvalidAction),
         };
         Ok(())
     }
@@ -223,28 +229,6 @@ impl DisputeRound {
         Ok(())
     }
 
-    fn handle_votes_counting(
-        &mut self,
-        contract: &mut dyn JuriesMap,
-        dispute: &mut Dispute,
-    ) -> Result<()> {
-        if self.state != RoundState::CountingTheVotes {
-            return Err(BrightDisputesError::WrongDisputeRoundState);
-        }
-        dispute.assert_judge()?;
-
-        // Mark judge work as done.
-        let judge_id = dispute.judge().unwrap();
-        let mut judge = contract.get_juror_or_assert(judge_id)?;
-        judge.action_done(dispute.id())?;
-        contract.update_juror(judge);
-
-        let result = dispute.count_votes()?;
-        dispute.end_dispute(result)?;
-
-        Ok(())
-    }
-
     fn deadline(begin: Timestamp, days: u64) -> Timestamp {
         begin + days * 24 * 3600 * 1000
     }
@@ -260,6 +244,14 @@ pub mod mock {
         pub fn voting(state_deadline: Timestamp) -> DisputeRound {
             DisputeRound {
                 state: RoundState::Voting,
+                number_of_juries: DisputeRound::INITIAL_NUMBER_OF_JURIES,
+                state_deadline,
+            }
+        }
+
+        pub fn counting(state_deadline: Timestamp) -> DisputeRound {
+            DisputeRound {
+                state: RoundState::CountingTheVotes,
                 number_of_juries: DisputeRound::INITIAL_NUMBER_OF_JURIES,
                 state_deadline,
             }
@@ -379,7 +371,8 @@ mod tests {
             .expect("Failed to assign juries and judge!");
 
         for juror in juries.iter_mut() {
-            juror.confirm_participation_in_dispute(1)
+            juror
+                .confirm_participation_in_dispute_and_store_pub_key(1, vec![])
                 .expect("Unable confirm juror participation in dispute!");
         }
 
@@ -432,7 +425,8 @@ mod tests {
             .expect("Failed to assign juries and judge!");
 
         for juror in juries.iter_mut() {
-            juror.confirm_participation_in_dispute(1)
+            juror
+                .confirm_participation_in_dispute_and_store_pub_key(1, vec![])
                 .expect("Unable confirm juror participation in dispute!");
         }
 
@@ -509,7 +503,8 @@ mod tests {
             .expect("Failed to assign juries and judge!");
 
         for juror in juries.iter_mut() {
-            juror.confirm_participation_in_dispute(1)
+            juror
+                .confirm_participation_in_dispute_and_store_pub_key(1, vec![])
                 .expect("Unable confirm juror participation in dispute!");
         }
 
@@ -537,93 +532,10 @@ mod tests {
             .process_dispute_round(&mut juries, &mut dispute, start_timestamp)
             .expect("Failed to move to counting votes state.");
 
-        // Failed, only judge can process this state
+        // Failed, counting the votes is handled by different method.
         set_caller::<DefaultEnvironment>(accounts.alice);
         let result = round.process_dispute_round(&mut juries, &mut dispute, start_timestamp);
-        assert_eq!(result, Err(BrightDisputesError::NotAuthorized));
-
-        // Success
-        set_caller::<DefaultEnvironment>(dispute.judge().unwrap());
-        assert_eq!(dispute.get_dispute_result(), None);
-        let result = round.process_dispute_round(&mut juries, &mut dispute, start_timestamp);
-        assert_eq!(result, Ok(()));
-        assert_eq!(dispute.get_dispute_result(), Some(DisputeResult::Owner));
-    }
-
-    #[ink::test]
-    fn process_dispute_round_handle_votes_counting_majority_not_reached() {
-        let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
-        set_caller::<DefaultEnvironment>(accounts.alice);
-
-        // Create a dispute
-        let mut dispute = Dispute::create(
-            1,
-            "https://brightinventions.pl/owner".into(),
-            accounts.bob,
-            10,
-        );
-
-        // Confirm defendant participation
-        set_caller::<DefaultEnvironment>(accounts.bob);
-        dispute
-            .confirm_defendant("".into())
-            .expect("Failed to confirm defendant a dispute!");
-
-        let start_timestamp = 0u64;
-        let mut round = DisputeRound::create(start_timestamp, None);
-
-        let mut juries = JuriesMapMock::create_vec(vec![
-            Juror::create(accounts.charlie),
-            Juror::create(accounts.eve),
-            Juror::create(accounts.frank),
-            Juror::create(accounts.django),
-        ]);
-
-        set_caller::<DefaultEnvironment>(accounts.alice);
-
-        // Assign juries and judge to dispute
-        round
-            .process_dispute_round(&mut juries, &mut dispute, start_timestamp)
-            .expect("Failed to assign juries and judge!");
-
-        for juror in juries.iter_mut() {
-            juror.confirm_participation_in_dispute(1)
-                .expect("Unable confirm juror participation in dispute!");
-        }
-
-        // Move to voting state
-        round
-            .process_dispute_round(&mut juries, &mut dispute, start_timestamp)
-            .expect("Failed move voting state");
-
-        // Before voting, we need to update dispute round
-        dispute.set_dispute_round(round.clone());
-
-        let voters = dispute.juries();
-        dispute
-            .vote(Vote::create(voters[0], 1))
-            .expect("Failed make a vote!");
-        dispute
-            .vote(Vote::create(voters[1], 1))
-            .expect("Failed make a vote!");
-        dispute
-            .vote(Vote::create(voters[2], 0))
-            .expect("Failed make a vote!");
-
-        // Move to counting the votes state.
-        round
-            .process_dispute_round(&mut juries, &mut dispute, start_timestamp)
-            .expect("Failed to move to counting votes state.");
-
-        // Failed, only judge can process this state
-        set_caller::<DefaultEnvironment>(accounts.alice);
-        let result = round.process_dispute_round(&mut juries, &mut dispute, start_timestamp);
-        assert_eq!(result, Err(BrightDisputesError::NotAuthorized));
-
-        // Success
-        set_caller::<DefaultEnvironment>(dispute.judge().unwrap());
-        let result = round.process_dispute_round(&mut juries, &mut dispute, start_timestamp);
-        assert_eq!(result, Err(BrightDisputesError::MajorityOfVotesNotReached));
+        assert_eq!(result, Err(BrightDisputesError::InvalidAction));
     }
 
     #[ink::test]

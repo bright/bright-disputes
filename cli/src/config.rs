@@ -43,13 +43,20 @@ pub enum ContractCmd {
         dispute_id: u32,
         defendant_link: String,
     },
+    /// Counts the votes
+    CountTheVotes {
+        caller_account: String,
+        dispute_id: u32,
+        #[clap(value_parser, num_args = 1.., value_delimiter = ',')]
+        private_key: Vec<u8>,
+    },
     /// Get dispute
     GetDispute {
         caller_account: String,
         dispute_id: u32,
     },
     /// Get dispute
-    GetDisputeFull{
+    GetDisputeFull {
         caller_account: String,
         dispute_id: u32,
     },
@@ -70,6 +77,8 @@ pub enum ContractCmd {
         caller_account: String,
         dispute_id: u32,
         vote: u8,
+        #[clap(value_parser, num_args = 1.., value_delimiter = ',')]
+        private_key: Vec<u8>,
     },
     /// Register as an active juror in bright disputes
     RegisterAsAnActiveJuror { caller_account: String },

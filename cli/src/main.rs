@@ -19,8 +19,8 @@ use crate::{
     config::{
         Command, Config,
         ContractCmd::{
-            ConfirmDefendant, ConfirmJudgeParticipation, ConfirmJurorParticipation, CreateDispute,
-            DistributeDeposit, GetDispute, GetDisputeFull, ProcessDisputeRound,
+            ConfirmDefendant, ConfirmJudgeParticipation, ConfirmJurorParticipation, CountTheVotes,
+            CreateDispute, DistributeDeposit, GetDispute, GetDisputeFull, ProcessDisputeRound,
             RegisterAsAnActiveJuror, UnregisterAsAnActiveJuror, UpdateDefendantDescription,
             UpdateOwnerDescription, Vote,
         },
@@ -99,6 +99,26 @@ async fn handle_contract_command(
                 dispute_id
             );
         }
+        CountTheVotes {
+            caller_account,
+            dispute_id,
+            private_key,
+        } => {
+            let account = keypair_from_string(&caller_account);
+            let signed_connection = SignedConnection::from_connection(connection, account.clone());
+
+            bright_dispute
+                .count_the_votes(
+                    &signed_connection,
+                    dispute_id,
+                    private_key,
+                    &app.verdict_none_pk,
+                    &app.verdict_negative_pk,
+                    &app.verdict_positive_pk,
+                )
+                .await?;
+            info!("Votes counted: {}!", dispute_id);
+        }
         GetDispute {
             caller_account,
             dispute_id,
@@ -153,12 +173,19 @@ async fn handle_contract_command(
             caller_account,
             dispute_id,
             vote,
+            private_key,
         } => {
             let account = keypair_from_string(&caller_account);
             let signed_connection = SignedConnection::from_connection(connection, account.clone());
 
             bright_dispute
-                .vote(&signed_connection, dispute_id, vote)
+                .vote(
+                    &signed_connection,
+                    dispute_id,
+                    private_key,
+                    vote,
+                    &app.vote_pk,
+                )
                 .await?;
             info!("Voting succeed!");
         }
@@ -197,7 +224,6 @@ async fn handle_contract_command(
             let dispute = bright_dispute
                 .get_dispute(&signed_connection, dispute_id)
                 .await?;
-
             bright_dispute
                 .confirm_juror_participation_in_dispute(
                     &signed_connection,

@@ -1,6 +1,6 @@
 use ink::primitives::AccountId;
 
-use crate::types::VoteValue;
+use crate::types::VoteHash;
 #[derive(Clone, Debug, PartialEq, scale::Decode, scale::Encode)]
 #[cfg_attr(
     feature = "std",
@@ -8,21 +8,18 @@ use crate::types::VoteValue;
 )]
 pub struct Vote {
     juror: AccountId,
-    vote: VoteValue,
+    vote: VoteHash,
 }
 
 impl Vote {
     #[allow(dead_code)]
-    pub fn create(juror: AccountId, vote: VoteValue) -> Self {
+    pub fn create(juror: AccountId, vote: VoteHash) -> Self {
         Vote { juror, vote }
     }
     pub fn juror(&self) -> AccountId {
         self.juror
     }
-    pub fn vote(&self) -> VoteValue {
+    pub fn vote(&self) -> VoteHash {
         self.vote
-    }
-    pub fn is_vote_against_owner(&self) -> bool {
-        self.vote == 1u8
     }
 }

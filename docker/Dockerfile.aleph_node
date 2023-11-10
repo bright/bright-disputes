@@ -1,0 +1,56 @@
+# FROM ubuntu:jammy-20220531
+
+# RUN apt update && \
+#     apt install wget -y && \
+#     apt install build-essential -y && \
+#     apt install curl -y && \
+#     apt install clang libclang-dev -y && \
+#     apt install pkg-config libssl-dev protobuf-compiler -y && \
+#     apt install ca-certificates -y && \
+#     apt clean && \
+#     rm -rf /var/lib/apt/lists/*
+
+# RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
+
+# ENV PATH="/root/.cargo/bin:${PATH}"
+
+# WORKDIR /node/
+
+# EXPOSE 30333 30343 9933 9944
+
+# # RUN rustup show
+# # RUN rustup target add x86_64-unknown-linux-gnu wasm32-unknown-unknown
+
+# CMD ["/bin/bash"]
+
+
+FROM ubuntu:jammy-20220531
+
+RUN apt update && \
+    apt install wget -y && \
+    apt install build-essential -y && \
+    apt install curl -y && \
+    apt install clang libclang-dev -y && \
+    apt install pkg-config libssl-dev protobuf-compiler -y && \
+    apt install ca-certificates -y && \
+    apt clean && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN curl https://sh.rustup.rs -sSf | sh -s -- -y
+
+ENV PATH="/root/.cargo/bin:${PATH}"
+
+COPY aleph-node /aleph-node/
+WORKDIR /aleph-node/
+
+EXPOSE 30333 30343 9933 9944
+
+RUN rustup show
+RUN rustup target add x86_64-unknown-linux-gnu wasm32-unknown-unknown
+RUN cargo build --release --features=liminal
+
+RUN cp /aleph-node/target/release/aleph-node /usr/local/bin
+RUN cp /aleph-node/docker/docker_entrypoint.sh /aleph-node/docker_entrypoint.sh
+RUN chmod +x /aleph-node/docker_entrypoint.sh
+
+ENTRYPOINT ["./docker_entrypoint.sh"]

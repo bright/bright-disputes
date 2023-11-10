@@ -10,16 +10,21 @@ publish = false
 path = "src/lib.rs"
 
 [dependencies]
+ark-serialize = { version = "^0.3.0", default-features = false }
 scale = { package = "parity-scale-codec", version = "3", default-features = false, features = ["derive"] }
 scale-info = { version = "2.3", default-features = false, features = ["derive"], optional = true }
 
-ink = { version = "4.0.1",  default-features = false }
+ink = { version = "~4.0.1",  default-features = false }
 
-baby-liminal-extension = { git = "https://github.com/Cardinal-Cryptography/aleph-node", default-features = false, features = ["ink", "ink-as-dependency"] }
+liminal-ark-relations = { path="../aleph-node/relations/ark", default-features = false }
+baby-liminal-extension = { path="../aleph-node/baby-liminal-extension", default-features = false, features = ["ink", "ink-as-dependency"] }
+
+obce = { git = "https://github.com/727-Ventures/obce", rev = "5e3da417c2189ddd4e9ef82cd586f8ec94b8952a", default-features = false }
 
 [features]
 default = ["std"]
 std = [
+    "ark-serialize/std",
     "scale/std",
     "scale-info/std",
     "ink/std",
