@@ -59,6 +59,12 @@ docker build -f docker/Dockerfile.testing --progress=plain .
 ```
 
 ## E2E tests
+Currently, we have four major tests for testing different endings of the dispute:
+* No majority of votes.
+* Verdict against the owner of the dispute.
+* Verdict against the defendant of the dispute.
+* Testing dispute rounds.
+
 To run E2E tests on your local machine, first run a aleph-node, build and deploy smart contract. We can do it, by running `deploy.sh` script:
 ```
 bash scripts/deploy.sh
@@ -72,13 +78,13 @@ ink-wrapper -m ../contract/target/ink/bright_disputes.json --wasm-path ../contra
 
 Finally we can run a e2e tests by calling:
 ```
-cargo +nightly test --release
+cargo +nightly-2023-04-19 test --release
 ```
 
-# TODO:
-* Store priv keys for jurors and judge in the JSON file and print it on the cmd
-* Judge should issue a verdict and point the banned juries...
-* Run/Fix all unit test
-* Run/Fix all e2e test
-* Update documentation + show cases
-
+The output of the e2e test is:
+```
+test bright_disputes_test::test_dispute_verdict_none ... ok
+test bright_disputes_test::test_dispute_verdict_positive ... ok
+test bright_disputes_test::test_dispute_verdict_negative ... ok
+test bright_disputes_test::test_dispute_rounds ... ok
+```

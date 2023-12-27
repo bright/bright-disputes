@@ -4,8 +4,8 @@ use scale::Encode as _;
 
 #[allow(dead_code)]
 pub const CODE_HASH: [u8; 32] = [
-    130, 214, 182, 242, 229, 248, 203, 44, 209, 112, 26, 249, 97, 59, 55, 140, 79, 16, 61, 217,
-    180, 9, 197, 216, 115, 133, 245, 120, 19, 53, 156, 20,
+    134, 34, 57, 191, 103, 29, 44, 56, 12, 231, 88, 242, 64, 144, 53, 34, 131, 56, 170, 238, 192,
+    142, 229, 240, 82, 204, 67, 181, 250, 239, 22, 82,
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, scale::Encode, scale::Decode)]
@@ -211,6 +211,17 @@ impl Instance {
         &self,
     ) -> ink_wrapper_types::ReadCall<Result<Vec<Dispute>, ink_wrapper_types::InkLangError>> {
         let data = vec![29, 12, 242, 122];
+        ink_wrapper_types::ReadCall::new(self.account_id, data)
+    }
+
+    ///  Get juries pool
+    #[allow(dead_code, clippy::too_many_arguments)]
+    pub fn get_juries_pool(
+        &self,
+    ) -> ink_wrapper_types::ReadCall<
+        Result<Vec<ink_primitives::AccountId>, ink_wrapper_types::InkLangError>,
+    > {
+        let data = vec![3, 234, 94, 249];
         ink_wrapper_types::ReadCall::new(self.account_id, data)
     }
 

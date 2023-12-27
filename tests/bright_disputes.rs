@@ -4,14 +4,14 @@ use scale::Encode as _;
 
 #[allow(dead_code)]
 pub const CODE_HASH: [u8; 32] = [
-    179, 189, 99, 47, 197, 174, 131, 44, 115, 1, 178, 61, 71, 213, 130, 167, 213, 69, 39, 112, 144,
-    89, 168, 255, 17, 165, 66, 233, 165, 43, 229, 145,
+    134, 34, 57, 191, 103, 29, 44, 56, 12, 231, 88, 242, 64, 144, 53, 34, 131, 56, 170, 238, 192,
+    142, 229, 240, 82, 204, 67, 181, 250, 239, 22, 82,
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, scale::Encode, scale::Decode)]
 pub struct Vote {
     pub juror: ink_primitives::AccountId,
-    pub vote: u8,
+    pub vote: [u64; 4],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, scale::Encode, scale::Decode)]
@@ -31,6 +31,7 @@ pub struct Dispute {
     pub juries: Vec<ink_primitives::AccountId>,
     pub banned: Vec<ink_primitives::AccountId>,
     pub votes: Vec<Vote>,
+    pub votes_hash: [u64; 4],
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, scale::Encode, scale::Decode)]
@@ -75,6 +76,7 @@ pub enum BrightDisputesError {
     JurorAlreadyAssignedToDispute(),
     JurorIsNotAssignedToDispute(),
     JurorAlreadyConfirmedDispute(),
+    JurorHasNotConfirmedDispute(),
     JurorInvalidState(),
     JurorNotExist(),
     JuriesPoolIsToSmall(),
@@ -103,6 +105,21 @@ pub enum BabyLiminalError {
     VerificationFailed(),
     IncorrectProof(),
     VerifyErrorUnknown(),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, scale::Encode, scale::Decode)]
+pub enum Verdict {
+    None(),
+    Negative(),
+    Positive(),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, scale::Encode, scale::Decode)]
+pub enum Relation {
+    Vote(),
+    VerdictNegative(),
+    VerdictNone(),
+    VerdictPositive(),
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, scale::Encode, scale::Decode)]
@@ -197,6 +214,17 @@ impl Instance {
         ink_wrapper_types::ReadCall::new(self.account_id, data)
     }
 
+    ///  Get juries pool
+    #[allow(dead_code, clippy::too_many_arguments)]
+    pub fn get_juries_pool(
+        &self,
+    ) -> ink_wrapper_types::ReadCall<
+        Result<Vec<ink_primitives::AccountId>, ink_wrapper_types::InkLangError>,
+    > {
+        let data = vec![3, 234, 94, 249];
+        ink_wrapper_types::ReadCall::new(self.account_id, data)
+    }
+
     ///  Get single dispute by id
     #[allow(dead_code, clippy::too_many_arguments)]
     pub fn remove_dispute(&self, dispute_id: u32) -> ink_wrapper_types::ExecCall {
@@ -276,11 +304,18 @@ impl Instance {
 
     ///  Voting, only juror can do it.
     #[allow(dead_code, clippy::too_many_arguments)]
-    pub fn vote(&self, dispute_id: u32, vote: u8, proof: Vec<u8>) -> ink_wrapper_types::ExecCall {
+    pub fn vote(
+        &self,
+        dispute_id: u32,
+        vote: [u64; 4],
+        hash_of_all_votes: [u64; 4],
+        proof: Vec<u8>,
+    ) -> ink_wrapper_types::ExecCall {
         let data = {
             let mut data = vec![8, 59, 226, 96];
             dispute_id.encode_to(&mut data);
             vote.encode_to(&mut data);
+            hash_of_all_votes.encode_to(&mut data);
             proof.encode_to(&mut data);
             data
         };
@@ -307,10 +342,12 @@ impl Instance {
     pub fn confirm_juror_participation_in_dispute(
         &self,
         dispute_id: u32,
+        public_key: Vec<u8>,
     ) -> ink_wrapper_types::ExecCallNeedsValue {
         let data = {
             let mut data = vec![141, 200, 7, 55];
             dispute_id.encode_to(&mut data);
+            public_key.encode_to(&mut data);
             data
         };
         ink_wrapper_types::ExecCallNeedsValue::new(self.account_id, data)
@@ -321,20 +358,36 @@ impl Instance {
     pub fn confirm_judge_participation_in_dispute(
         &self,
         dispute_id: u32,
+        public_key: Vec<u8>,
     ) -> ink_wrapper_types::ExecCallNeedsValue {
         let data = {
             let mut data = vec![178, 215, 24, 15];
             dispute_id.encode_to(&mut data);
+            public_key.encode_to(&mut data);
             data
         };
         ink_wrapper_types::ExecCallNeedsValue::new(self.account_id, data)
     }
 
     #[allow(dead_code, clippy::too_many_arguments)]
-    pub fn count_the_votes(&self, dispute_id: u32, proof: Vec<u8>) -> ink_wrapper_types::ExecCall {
+    pub fn issue_the_verdict(
+        &self,
+        dispute_id: u32,
+        votes_maximum: u8,
+        votes_minimum: u8,
+        verdict: Verdict,
+        hashed_votes: [u64; 4],
+        jurors_banned: Vec<ink_primitives::AccountId>,
+        proof: Vec<u8>,
+    ) -> ink_wrapper_types::ExecCall {
         let data = {
-            let mut data = vec![231, 126, 247, 3];
+            let mut data = vec![6, 210, 102, 105];
             dispute_id.encode_to(&mut data);
+            votes_maximum.encode_to(&mut data);
+            votes_minimum.encode_to(&mut data);
+            verdict.encode_to(&mut data);
+            hashed_votes.encode_to(&mut data);
+            jurors_banned.encode_to(&mut data);
             proof.encode_to(&mut data);
             data
         };
@@ -361,5 +414,35 @@ impl Instance {
             data
         };
         ink_wrapper_types::ExecCall::new(self.account_id, data)
+    }
+
+    ///  Register a verification key.
+    #[allow(dead_code, clippy::too_many_arguments)]
+    pub fn register_vk(&self, relation: Relation, vk: Vec<u8>) -> ink_wrapper_types::ExecCall {
+        let data = {
+            let mut data = vec![165, 234, 12, 120];
+            relation.encode_to(&mut data);
+            vk.encode_to(&mut data);
+            data
+        };
+        ink_wrapper_types::ExecCall::new(self.account_id, data)
+    }
+
+    ///  Get Juror/Judge public key if he is assigned to the dispute.
+    #[allow(dead_code, clippy::too_many_arguments)]
+    pub fn juror_public_key(
+        &self,
+        dispute_id: u32,
+        juror_id: ink_primitives::AccountId,
+    ) -> ink_wrapper_types::ReadCall<
+        Result<Result<Vec<u8>, BrightDisputesError>, ink_wrapper_types::InkLangError>,
+    > {
+        let data = {
+            let mut data = vec![198, 90, 15, 199];
+            dispute_id.encode_to(&mut data);
+            juror_id.encode_to(&mut data);
+            data
+        };
+        ink_wrapper_types::ReadCall::new(self.account_id, data)
     }
 }

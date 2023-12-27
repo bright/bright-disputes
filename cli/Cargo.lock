@@ -581,6 +581,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "bright-disputes-lib"
+version = "0.1.0"
+dependencies = [
+ "aleph_client",
+ "anyhow",
+ "ark-ed-on-bls12-381",
+ "ark-serialize",
+ "ark-std",
+ "ink_primitives",
+ "liminal-ark-relations",
+]
+
+[[package]]
 name = "bright_disputes_cli"
 version = "0.1.0"
 dependencies = [
@@ -589,6 +602,7 @@ dependencies = [
  "ark-ed-on-bls12-381",
  "ark-serialize",
  "ark-std",
+ "bright-disputes-lib",
  "clap",
  "ink-wrapper-types",
  "ink_primitives",

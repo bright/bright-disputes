@@ -20,6 +20,8 @@ jobs:
         with:
             toolchain: 1.69
             override: true
+      - name: Updating submodules
+        run: git submodule update --init --recursive
       - name: Update Rust environment
         run: rustup component add rust-src --toolchain 1.69-x86_64-unknown-linux-gnu
       - name: Adding WebAssembly target

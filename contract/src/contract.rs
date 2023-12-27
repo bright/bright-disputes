@@ -139,6 +139,12 @@ pub mod bright_disputes {
                 .collect()
         }
 
+        /// Get juries pool
+        #[ink(message)]
+        pub fn get_juries_pool(&self) -> Vec<AccountId> {
+            self.juries_pool.clone()
+        }
+
         /// Get single dispute by id
         #[ink(message)]
         pub fn remove_dispute(&mut self, dispute_id: DisputeId) -> Result<()> {
@@ -258,15 +264,7 @@ pub mod bright_disputes {
         /// from this pool to participate in disputes.
         #[ink(message)]
         pub fn register_as_an_active_juror(&mut self) -> Result<()> {
-            let caller = ink::env::caller::<ink::env::DefaultEnvironment>();
-            self.assert_juror_not_in_pool(caller)?;
-
-            let juror = self
-                .juries
-                .get(caller)
-                .unwrap_or_else(|| Juror::create(caller));
-            self.juries_pool.push(juror.id());
-            self.update_juror(juror);
+            self.add_to_juries_pool(ink::env::caller::<ink::env::DefaultEnvironment>())?;
             Ok(())
         }
 
@@ -356,8 +354,8 @@ pub mod bright_disputes {
                 ),
                 Verdict::None => (
                     VerdictNoneRelationWithPublicInput::new(
-                        votes_maximum,
                         votes_minimum,
+                        votes_maximum,
                         VerdictRelation::None as u8,
                         hashed_votes,
                     )
@@ -420,6 +418,7 @@ pub mod bright_disputes {
                             let judge = self.get_juror_or_assert(judge_id)?;
                             if judge.is_requested_for_action(dispute_id) {
                                 dispute.move_to_banned(judge_id)?;
+                                self.add_to_juries_pool(judge_id)?;
                             }
                         }
 
@@ -428,6 +427,7 @@ pub mod bright_disputes {
                             let juror = self.get_juror_or_assert(juror_id)?;
                             if juror.is_requested_for_action(dispute_id) {
                                 dispute.move_to_banned(juror_id)?;
+                                self.add_to_juries_pool(juror_id)?;
                             }
                         }
 
@@ -470,11 +470,13 @@ pub mod bright_disputes {
             // Add judge
             if let Some(judge_id) = dispute.judge() {
                 accounts.push(judge_id);
+                self.add_to_juries_pool(judge_id)?;
             }
 
             // Add juries, who were not banned.
             for juror_id in dispute.juries() {
                 accounts.push(juror_id);
+                self.add_to_juries_pool(juror_id)?;
             }
 
             // Split deposit and transfer founds.
@@ -550,6 +552,17 @@ pub mod bright_disputes {
             return Err(BrightDisputesError::NotRegisteredAsJuror);
         }
 
+        fn add_to_juries_pool(&mut self, juror_id: AccountId) -> Result<()> {
+            self.assert_juror_not_in_pool(juror_id)?;
+            let juror = self
+                .juries
+                .get(juror_id)
+                .unwrap_or_else(|| Juror::create(juror_id));
+            self.juries_pool.push(juror.id());
+            self.update_juror(juror);
+            Ok(())
+        }
+
         fn get_random_juries_from_pool(
             &self,
             except_juries: &Vec<AccountId>,
@@ -608,6 +621,34 @@ pub mod bright_disputes {
 
     #[cfg(test)]
     mod tests {
+        mod mock {
+            use baby_liminal_extension::{
+                BabyLiminalError, BabyLiminalExtension, VerificationKeyIdentifier,
+            };
+            use ink::{prelude::vec::Vec, primitives::AccountId as AccountId32};
+
+            #[obce::mock]
+            impl BabyLiminalExtension for () {
+                fn store_key(
+                    &mut self,
+                    _: AccountId32,
+                    _: VerificationKeyIdentifier,
+                    _: Vec<u8>,
+                ) -> Result<(), BabyLiminalError> {
+                    Ok(())
+                }
+
+                fn verify(
+                    &mut self,
+                    _: VerificationKeyIdentifier,
+                    _: Vec<u8>,
+                    _: Vec<u8>,
+                ) -> Result<(), BabyLiminalError> {
+                    Ok(())
+                }
+            }
+        }
+
         use ink::env::{
             test::{set_caller, set_value_transferred},
             DefaultEnvironment,
@@ -756,7 +797,7 @@ pub mod bright_disputes {
             );
         }
 
-        /// Test if we can remove a single dispute.
+        // Test if we can remove a single dispute.
         #[ink::test]
         fn remove_dispute() {
             let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
@@ -783,7 +824,7 @@ pub mod bright_disputes {
                 .get_dispute(1)
                 .expect("Failed to get dispute!");
             dispute
-                .end_dispute(DisputeResult::Owner)
+                .end_dispute(DisputeResult::Owner, vec![])
                 .expect("Failed to end dispute!");
             bright_disputes.update_dispute(dispute.clone());
             let result = bright_disputes.remove_dispute(1);
@@ -1024,7 +1065,7 @@ pub mod bright_disputes {
         // Check switching to next round when deadline appear.
         #[ink::test]
         fn vote() {
-            baby_liminal_extension::ink::mock_test::register_chain_extensions(());
+            mock::register_chain_extensions(());
 
             let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
             set_caller::<DefaultEnvironment>(accounts.alice);
@@ -1086,15 +1127,15 @@ pub mod bright_disputes {
             // Juries voting
             set_caller::<DefaultEnvironment>(assigned_juries[0]);
             bright_disputes
-                .vote(dispute_id, 1, vec![])
+                .vote(dispute_id, [0u64; 4], [0u64; 4], vec![])
                 .expect("Failed to vote");
             set_caller::<DefaultEnvironment>(assigned_juries[1]);
             bright_disputes
-                .vote(dispute_id, 1, vec![])
+                .vote(dispute_id, [0u64; 4], [0u64; 4], vec![])
                 .expect("Failed to vote");
             set_caller::<DefaultEnvironment>(assigned_juries[2]);
             bright_disputes
-                .vote(dispute_id, 1, vec![])
+                .vote(dispute_id, [0u64; 4], [0u64; 4], vec![])
                 .expect("Failed to vote");
 
             // Switch state to "CountingTheVotes" state
@@ -1129,7 +1170,7 @@ pub mod bright_disputes {
         // Check dispute round progress
         #[ink::test]
         fn process_dispute_round() {
-            baby_liminal_extension::ink::mock_test::register_chain_extensions(());
+            mock::register_chain_extensions(());
 
             let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
             set_caller::<DefaultEnvironment>(accounts.alice);
@@ -1191,15 +1232,15 @@ pub mod bright_disputes {
             // Juries voting
             set_caller::<DefaultEnvironment>(assigned_juries[0]);
             bright_disputes
-                .vote(dispute_id, 1, vec![])
+                .vote(dispute_id, [0u64; 4], [0u64; 4], vec![])
                 .expect("Failed to vote");
             set_caller::<DefaultEnvironment>(assigned_juries[1]);
             bright_disputes
-                .vote(dispute_id, 1, vec![])
+                .vote(dispute_id, [0u64; 4], [0u64; 4], vec![])
                 .expect("Failed to vote");
             set_caller::<DefaultEnvironment>(assigned_juries[2]);
             bright_disputes
-                .vote(dispute_id, 1, vec![])
+                .vote(dispute_id, [0u64; 4], [0u64; 4], vec![])
                 .expect("Failed to vote");
 
             // Switch state to CountingTheVotes
@@ -1209,19 +1250,35 @@ pub mod bright_disputes {
 
             // Failed to count the votes, only judge can do it.
             set_caller::<DefaultEnvironment>(accounts.alice);
-            let result = bright_disputes.count_the_votes(3, dispute_id, vec![]);
+            let result = bright_disputes.issue_the_verdict(
+                dispute_id,
+                0,
+                0,
+                Verdict::Positive,
+                [0u64; 4],
+                vec![],
+                vec![],
+            );
             assert_eq!(result, Err(BrightDisputesError::NotAuthorized));
 
             // Count the votes, dispute ends
             set_caller::<DefaultEnvironment>(juror_not_assigned[0]);
-            let result = bright_disputes.count_the_votes(3, dispute_id, vec![]);
+            let result = bright_disputes.issue_the_verdict(
+                dispute_id,
+                0,
+                0,
+                Verdict::Positive,
+                [0u64; 4],
+                vec![],
+                vec![],
+            );
             assert_eq!(result, Ok(()));
         }
 
         // Check switching to next rounds.
         #[ink::test]
         fn process_dispute_round_next_round() {
-            baby_liminal_extension::ink::mock_test::register_chain_extensions(());
+            mock::register_chain_extensions(());
 
             let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
             set_caller::<DefaultEnvironment>(accounts.alice);
@@ -1284,15 +1341,15 @@ pub mod bright_disputes {
             // Juries voting
             set_caller::<DefaultEnvironment>(assigned_juries[0]);
             bright_disputes
-                .vote(dispute_id, 1, vec![])
+                .vote(dispute_id, [0u64; 4], [0u64; 4], vec![])
                 .expect("Failed to vote");
             set_caller::<DefaultEnvironment>(assigned_juries[1]);
             bright_disputes
-                .vote(dispute_id, 1, vec![])
+                .vote(dispute_id, [0u64; 4], [0u64; 4], vec![])
                 .expect("Failed to vote");
             set_caller::<DefaultEnvironment>(assigned_juries[2]);
             bright_disputes
-                .vote(dispute_id, 0, vec![])
+                .vote(dispute_id, [0u64; 4], [0u64; 4], vec![])
                 .expect("Failed to vote");
 
             // Switch state to "CountingTheVotes" state
@@ -1302,7 +1359,15 @@ pub mod bright_disputes {
 
             // Majority of votes not reached, new round.
             set_caller::<DefaultEnvironment>(juror_not_assigned[0]);
-            let result = bright_disputes.count_the_votes(3, dispute_id, vec![]);
+            let result = bright_disputes.issue_the_verdict(
+                dispute_id,
+                0,
+                0,
+                Verdict::None,
+                [0u64; 4],
+                vec![],
+                vec![],
+            );
             assert_eq!(result, Ok(()));
 
             // New round
@@ -1314,7 +1379,7 @@ pub mod bright_disputes {
         // Check deposit distribution
         #[ink::test]
         fn distribute_deposit() {
-            baby_liminal_extension::ink::mock_test::register_chain_extensions(());
+            mock::register_chain_extensions(());
 
             let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
             set_caller::<DefaultEnvironment>(accounts.alice);
@@ -1377,15 +1442,15 @@ pub mod bright_disputes {
             // Juries voting
             set_caller::<DefaultEnvironment>(assigned_juries[0]);
             bright_disputes
-                .vote(dispute_id, 1, vec![])
+                .vote(dispute_id, [0u64; 4], [0u64; 4], vec![])
                 .expect("Failed to vote");
             set_caller::<DefaultEnvironment>(assigned_juries[1]);
             bright_disputes
-                .vote(dispute_id, 1, vec![])
+                .vote(dispute_id, [0u64; 4], [0u64; 4], vec![])
                 .expect("Failed to vote");
             set_caller::<DefaultEnvironment>(assigned_juries[2]);
             bright_disputes
-                .vote(dispute_id, 1, vec![])
+                .vote(dispute_id, [0u64; 4], [0u64; 4], vec![])
                 .expect("Failed to vote");
 
             // Switch state to CountingTheVotes
@@ -1397,17 +1462,20 @@ pub mod bright_disputes {
             // Count the votes, dispute ends
             set_caller::<DefaultEnvironment>(juror_not_assigned[0]);
             bright_disputes
-                .count_the_votes(3, dispute_id, vec![])
+                .issue_the_verdict(
+                    dispute_id,
+                    0,
+                    0,
+                    Verdict::Positive,
+                    [0u64; 4],
+                    vec![],
+                    vec![],
+                )
                 .expect("Failed process dispute round!");
 
             set_caller::<DefaultEnvironment>(accounts.bob);
             let result = bright_disputes.distribute_deposit(dispute_id);
             assert_eq!(result, Ok(()));
-        }
-
-        #[ink::test]
-        fn juror_public_key() {
-            // TODO !!
         }
     }
 }

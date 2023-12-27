@@ -151,7 +151,7 @@ impl Dispute {
 
     pub fn votes_hash(&self) -> VoteHash {
         return self.votes_hash;
-    }    
+    }
 
     /// Getter dispute result
     pub fn get_dispute_result(&self) -> Option<DisputeResult> {
@@ -513,98 +513,16 @@ mod tests {
         dispute.dispute_round = Some(DisputeRoundFake::voting(0u64));
 
         // Only juror can vote
-        let result = dispute.vote(Vote::create(accounts.bob, 1));
+        let result = dispute.vote(Vote::create(accounts.bob, [0u64; 4]), [0u64; 4]);
         assert_eq!(result, Err(BrightDisputesError::NotAuthorized));
 
         // Success
-        let result = dispute.vote(Vote::create(accounts.charlie, 1));
+        let result = dispute.vote(Vote::create(accounts.charlie, [0u64; 4]), [0u64; 4]);
         assert_eq!(result, Ok(()));
 
         // Juror can vote only once
-        let result = dispute.vote(Vote::create(accounts.charlie, 0));
+        let result = dispute.vote(Vote::create(accounts.charlie, [0u64; 4]), [0u64; 4]);
         assert_eq!(result, Err(BrightDisputesError::JurorAlreadyVoted));
-    }
-
-    #[ink::test]
-    fn count_votes() {
-        let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
-        let mut dispute = default_test_running_dispute();
-
-        // Force "Voting" state
-        dispute.dispute_round = Some(DisputeRoundFake::voting(0u64));
-
-        let mut charlie = Juror::create(accounts.charlie);
-        dispute
-            .assign_juror(&mut charlie)
-            .expect("Unable to add juror!");
-
-        let mut eve = Juror::create(accounts.eve);
-        dispute
-            .assign_juror(&mut eve)
-            .expect("Unable to add juror!");
-
-        let mut frank = Juror::create(accounts.frank);
-        dispute
-            .assign_juror(&mut frank)
-            .expect("Unable to add juror!");
-
-        let mut django = Juror::create(accounts.django);
-        dispute
-            .assign_judge(&mut django)
-            .expect("Unable to add juror!");
-
-        // Force "Vote Counting" state
-        dispute.dispute_round = Some(DisputeRoundFake::counting(0u64));
-
-        // Test, only judge can count the votes.
-        set_caller::<DefaultEnvironment>(accounts.alice);
-        let result = dispute.count_votes();
-        assert_eq!(result, Err(BrightDisputesError::NotAuthorized));
-
-        set_caller::<DefaultEnvironment>(accounts.bob);
-        let result = dispute.count_votes();
-        assert_eq!(result, Err(BrightDisputesError::NotAuthorized));
-
-        set_caller::<DefaultEnvironment>(accounts.charlie);
-        let result = dispute.count_votes();
-        assert_eq!(result, Err(BrightDisputesError::NotAuthorized));
-
-        set_caller::<DefaultEnvironment>(accounts.django);
-        let result = dispute.count_votes();
-        assert_eq!(result, Err(BrightDisputesError::MajorityOfVotesNotReached));
-
-        // Force "Voting" state
-        dispute.dispute_round = Some(DisputeRoundFake::voting(0u64));
-
-        // Voting
-        dispute
-            .vote(Vote::create(accounts.charlie, 1))
-            .expect("Failed to vote!");
-
-        dispute
-            .vote(Vote::create(accounts.eve, 1))
-            .expect("Failed to vote!");
-
-        // Force "Vote Counting" state
-        dispute.dispute_round = Some(DisputeRoundFake::counting(0u64));
-
-        set_caller::<DefaultEnvironment>(accounts.django);
-        let result = dispute.count_votes();
-        assert_eq!(result, Err(BrightDisputesError::MajorityOfVotesNotReached));
-
-        // Force "Voting" state
-        dispute.dispute_round = Some(DisputeRoundFake::voting(0u64));
-
-        dispute
-            .vote(Vote::create(accounts.frank, 1))
-            .expect("Failed to vote!");
-
-        // Force "Vote Counting" state
-        dispute.dispute_round = Some(DisputeRoundFake::counting(0u64));
-
-        set_caller::<DefaultEnvironment>(accounts.django);
-        let result = dispute.count_votes();
-        assert_eq!(result, Ok(DisputeResult::Owner));
     }
 
     #[ink::test]
@@ -888,7 +806,7 @@ mod tests {
         );
 
         dispute
-            .vote(Vote::create(accounts.charlie, 1))
+            .vote(Vote::create(accounts.charlie, [0u64; 4]), [0u64; 4])
             .expect("Failed to vote!");
 
         assert_eq!(dispute.get_not_voted_juries(), vec![accounts.eve]);
@@ -919,7 +837,7 @@ mod tests {
             .assign_juror(&mut charlie)
             .expect("Unable to add juror!");
         dispute
-            .vote(Vote::create(accounts.charlie, 1))
+            .vote(Vote::create(accounts.charlie, [0u64; 4]), [0u64; 4])
             .expect("Failed to vote!");
 
         let mut eve = Juror::create(accounts.eve);
@@ -955,7 +873,7 @@ mod tests {
         set_caller::<DefaultEnvironment>(accounts.alice);
 
         let mut dispute = Dispute::create(1, "".into(), accounts.bob, 15);
-        let result = dispute.end_dispute(DisputeResult::Owner);
+        let result = dispute.end_dispute(DisputeResult::Owner, vec![]);
         assert_eq!(result, Err(BrightDisputesError::InvalidDisputeState));
 
         // Force "Voting" state
@@ -968,7 +886,7 @@ mod tests {
             .assign_juror(&mut charlie)
             .expect("Unable to add juror!");
         dispute
-            .vote(Vote::create(accounts.charlie, 1))
+            .vote(Vote::create(accounts.charlie, [0u64; 4]), [0u64; 4])
             .expect("Failed to vote!");
 
         // Eve vote against Defendant
@@ -977,10 +895,10 @@ mod tests {
             .assign_juror(&mut eve)
             .expect("Unable to add juror!");
         dispute
-            .vote(Vote::create(accounts.eve, 0))
+            .vote(Vote::create(accounts.eve, [0u64; 4]), [0u64; 4])
             .expect("Failed to vote!");
 
-        let result = dispute.end_dispute(DisputeResult::Owner);
+        let result = dispute.end_dispute(DisputeResult::Owner, vec![accounts.eve]);
         assert_eq!(result, Ok(()));
 
         assert_eq!(dispute.banned().len(), 1);

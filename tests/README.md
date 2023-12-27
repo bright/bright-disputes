@@ -31,5 +31,5 @@ cargo contract upload --manifest-path contract/Cargo.toml --suri //Alice --url w
 
 Now we can run e2e tests:
 ```
-cargo +nightly test --release
+cargo +nightly-2023-04-19 test --release
 ```
