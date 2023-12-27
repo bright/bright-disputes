@@ -3,25 +3,20 @@ use std::path::Path;
 
 use aleph_client::{contract::ContractInstance, AccountId, SignedConnection};
 use anyhow::{anyhow, Result};
-use ark_ed_on_bls12_381::EdwardsAffine as JubJubAffine;
 use ark_ed_on_bls12_381::EdwardsProjective as JubJub;
-use ark_std::{vec::Vec, One, Zero};
+use ark_std::vec::Vec;
+use bright_disputes_lib::{
+    helpers::{account_id_to_string, to_ink_account_id},
+    prepare_counting_inputs, prepare_voting_inputs, PublicVote,
+};
 use ink_wrapper_types::{Connection as _, SignedConnection as _};
-use liminal_ark_relations::environment::CircuitField;
 use liminal_ark_relations::disputes::{
     ecdh::{Ecdh, EcdhScheme},
-    field_to_vote, hash_to_field, make_shared_key_hash, make_two_to_one_hash, vote_to_filed,
-    VerdictNegativeRelationWithFullInput, VerdictNoneRelationWithFullInput,
-    VerdictPositiveRelationWithFullInput, VerdictRelation, VoteRelationWithFullInput,
-    MAX_VOTES_LEN,
+    VerdictRelation,
 };
 use tracing::info;
 
-use crate::{
-    bright_disputes_ink::{Dispute, Instance, Verdict},
-    generate_proof,
-    helpers::{account_id_to_string, to_ink_account_id},
-};
+use crate::bright_disputes_ink::{Dispute, Instance, Verdict};
 
 impl From<&ContractInstance> for Instance {
     fn from(contract: &ContractInstance) -> Self {
@@ -198,33 +193,19 @@ impl BrightDisputes {
             .get_juror_public_key(connection, dispute_id, judge_id)
             .await?;
 
-        let judge_pub_key = Ecdh::<JubJub>::deserialize_public_key(judge_pub_key);
-        let juror_priv_key = Ecdh::<JubJub>::deserialize_private_key(private_key);
-        let shared_key = Ecdh::<JubJub>::make_shared_key(judge_pub_key, juror_priv_key);
-        let hashed_shared_key = make_shared_key_hash(shared_key);
-        let encrypted_vote = vote_to_filed(vote) + hashed_shared_key;
-        let new_encrypted_all_votes =
-            make_two_to_one_hash(encrypted_vote, hash_to_field(dispute.votes_hash));
-
-        let circuit = VoteRelationWithFullInput::new(
-            encrypted_vote.0 .0,
-            dispute.votes_hash,
-            new_encrypted_all_votes.0 .0,
+        let (encrypted_vote, new_encrypted_all_votes, proof) = prepare_voting_inputs(
             vote,
-            hashed_shared_key.0 .0,
-        );
-        let proof = generate_proof(circuit, vote_pk_file)?;
+            dispute.votes_hash,
+            judge_pub_key,
+            private_key,
+            vote_pk_file,
+        )?;
 
         info!(target: "bright_disputes_cli", "Proof generated");
 
         let ink_contract: Instance = (&self.contract).into();
         connection
-            .exec(ink_contract.vote(
-                dispute_id,
-                encrypted_vote.0 .0,
-                new_encrypted_all_votes.0 .0,
-                proof,
-            ))
+            .exec(ink_contract.vote(dispute_id, encrypted_vote, new_encrypted_all_votes, proof))
             .await?;
 
         Ok(())
@@ -312,95 +293,45 @@ impl BrightDisputes {
         &self,
         connection: &SignedConnection,
         dispute_id: u32,
-        private_key: Vec<u8>,
+        judge_private_key: Vec<u8>,
         verdict_none_pk: &Path,
         verdict_negative_pk: &Path,
         verdict_positive_pk: &Path,
     ) -> Result<()> {
         let dispute = self.get_dispute(connection, dispute_id).await?;
-        let judge_priv_key = Ecdh::<JubJub>::deserialize_private_key(private_key.clone());
 
-        let mut jurors_banned = Vec::<ink_primitives::AccountId>::new();
-        let mut decoded_votes = Vec::<u8>::new();
-        let mut shared_keys = Vec::<[u64; 4]>::new();
-        let mut all_votes_hashed = hash_to_field([1u64; 4]);
-        let mut hashed_votes = CircuitField::one();
-        let mut sum_votes: u8 = 0;
-        for i in 0..MAX_VOTES_LEN as usize {
-            if let Some(vote) = dispute.votes.get(i) {
-                let juror_pub_key = self
-                    .get_juror_public_key(connection, dispute_id, vote.juror)
-                    .await?;
-                let juror_pub_key = Ecdh::<JubJub>::deserialize_public_key(juror_pub_key);
-                let shared_key = Ecdh::<JubJub>::make_shared_key(juror_pub_key, judge_priv_key);
-                let hashed_shared_key = make_shared_key_hash(shared_key);
-                shared_keys.push(hashed_shared_key.0 .0);
-
-                let decode_vote =
-                    field_to_vote(hash_to_field(vote.vote) - hashed_shared_key.clone());
-                hashed_votes = make_two_to_one_hash(hash_to_field(vote.vote), hashed_votes);
-                all_votes_hashed = make_two_to_one_hash(hash_to_field(vote.vote), all_votes_hashed);
-                if decode_vote > 0 {
-                    jurors_banned.push(vote.juror);
-                }
-                sum_votes += decode_vote;
-                decoded_votes.push(decode_vote);
-            } else {
-                let shared_key =
-                    Ecdh::<JubJub>::make_shared_key(JubJubAffine::zero(), judge_priv_key);
-                let hashed_shared_key = make_shared_key_hash(shared_key);
-
-                decoded_votes.push(0u8);
-                shared_keys.push(hashed_shared_key.0 .0);
-                hashed_votes = make_two_to_one_hash(
-                    vote_to_filed(0u8) + hashed_shared_key.clone(),
-                    hashed_votes,
-                );
-            }
+        let mut jurors_public_key = Vec::<Vec<u8>>::new();
+        for vote in &dispute.votes {
+            let key = self
+                .get_juror_public_key(connection, dispute_id, vote.juror)
+                .await?;
+            jurors_public_key.push(key);
         }
 
-        let votes_minimum: u8 = (0.75 * dispute.juries.len() as f32).ceil() as u8;
-        let votes_maximum: u8 = dispute.juries.len() as u8 - votes_minimum;
-        let verdict = if sum_votes >= votes_maximum {
-            Verdict::Positive()
-        } else if sum_votes <= votes_minimum {
-            Verdict::Negative()
-        } else {
-            Verdict::None()
-        };
+        let votes: Vec<PublicVote> = dispute
+            .votes
+            .iter()
+            .zip(jurors_public_key.iter())
+            .map(|(&ref vote, &ref key)| PublicVote {
+                id: vote.juror,
+                pub_key: key.clone(),
+                hashed_vote: vote.vote,
+            })
+            .collect();
 
-        let proof = match verdict {
-            Verdict::Positive() => generate_proof(
-                VerdictPositiveRelationWithFullInput::new(
-                    votes_minimum,
-                    VerdictRelation::Positive as u8,
-                    hashed_votes.0 .0,
-                    decoded_votes,
-                    shared_keys,
-                ),
-                verdict_positive_pk,
-            ),
-            Verdict::Negative() => generate_proof(
-                VerdictNegativeRelationWithFullInput::new(
-                    votes_maximum,
-                    VerdictRelation::Negative as u8,
-                    hashed_votes.0 .0,
-                    decoded_votes,
-                    shared_keys,
-                ),
-                verdict_negative_pk,
-            ),
-            Verdict::None() => generate_proof(
-                VerdictNoneRelationWithFullInput::new(
-                    votes_maximum,
-                    votes_minimum,
-                    VerdictRelation::None as u8,
-                    hashed_votes.0 .0,
-                    decoded_votes,
-                    shared_keys,
-                ),
+        let (votes_maximum, votes_minimum, verdict, hashed_votes, jurors_banned, proof) =
+            prepare_counting_inputs(
+                judge_private_key,
+                votes,
                 verdict_none_pk,
-            ),
+                verdict_negative_pk,
+                verdict_positive_pk,
+            )?;
+
+        let ink_verdict = match verdict {
+            VerdictRelation::Positive => Verdict::Positive(),
+            VerdictRelation::Negative => Verdict::Negative(),
+            VerdictRelation::None => Verdict::None(),
         };
 
         info!(target: "bright_disputes_cli", "Proof generated");
@@ -411,10 +342,10 @@ impl BrightDisputes {
                 dispute_id,
                 votes_maximum,
                 votes_minimum,
-                verdict,
-                hashed_votes.0 .0,
+                ink_verdict,
+                hashed_votes,
                 jurors_banned,
-                proof.unwrap(),
+                proof,
             ))
             .await?;
 

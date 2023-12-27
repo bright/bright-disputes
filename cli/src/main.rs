@@ -2,19 +2,25 @@ use aleph_client::{
     account_from_keypair, keypair_from_string, AccountId, Connection, SignedConnection,
 };
 use anyhow::{anyhow, Result};
-use bright_disputes::{application::Application, bright_disputes::BrightDisputes};
+use bright_disputes_lib::helpers::to_ink_account_id;
 use clap::Parser;
+use inquire::Text;
 use std::str::FromStr;
 use std::{env, io};
-extern crate bright_disputes;
-use inquire::Text;
 use tracing::info;
 use tracing_subscriber::EnvFilter;
 
-use crate::config::{Command::SetNode, ContractCmd};
-
+mod application;
+mod bright_disputes;
+mod bright_disputes_ink;
 mod config;
-mod helpers;
+
+use crate::{
+    application::Application,
+    bright_disputes::BrightDisputes,
+    config::{Command::SetNode, ContractCmd},
+};
+
 use crate::{
     config::{
         Command, Config,
@@ -25,7 +31,6 @@ use crate::{
             UpdateOwnerDescription, Vote,
         },
     },
-    helpers::to_ink_account_id,
     Command::{Contract, SetContract},
 };
 

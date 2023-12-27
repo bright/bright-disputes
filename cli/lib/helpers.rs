@@ -5,6 +5,11 @@ pub fn to_ink_account_id(account_id: &AccountId) -> ink_primitives::AccountId {
     inner.into()
 }
 
+pub fn account_id_to_ink(account_id: &ink_primitives::AccountId) -> AccountId {
+    let inner: [u8; 32] = *account_id.as_ref();
+    inner.into()
+}
+
 #[allow(dead_code)]
 pub fn account_id_to_string(account_id: &ink_primitives::AccountId) -> String {
     let inner: [u8; 32] = *account_id.as_ref();

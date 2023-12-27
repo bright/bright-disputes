@@ -1,5 +1,5 @@
 [package]
-name = "bright_disputes"
+name = "bright_disputes_tests"
 version = "0.1.0"
 authors = ["Bright Inventions"]
 edition = "2021"
@@ -9,10 +9,7 @@ license = "MIT"
 path = "lib.rs"
 
 [dependencies]
-ink-wrapper-types = "0.5.0"
 scale = { package = "parity-scale-codec", version = "3", default-features = false, features = ["derive"] }
-ink_primitives = "4.0.1"
-aleph_client = "3.0.0"
 async-trait = "0.1.68"
 
 # These are a couple dependencies we will use to write our tests
@@ -20,3 +17,12 @@ tokio = { version = "1.25.0", features = ["macros"] }
 rand = "0.8.5"
 anyhow = "1.0.71"
 once_cell = "1.17.1"
+
+bright-disputes-lib = { path="../cli/lib" }
+ark-std = { version = "^0.3.0", default-features = false }
+ark-ed-on-bls12-381 = { version = "^0.3.0", features = ["r1cs"] }
+ark-serialize = { version = "^0.3.0", default-features = false }
+aleph_client = "3.0.0"
+ink-wrapper-types = "0.5.0"
+ink_primitives = "4.3.0"
+liminal-ark-relations = { version = "0.4.0", path = "../aleph-node/relations/ark" }

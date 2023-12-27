@@ -248,14 +248,6 @@ pub mod mock {
                 state_deadline,
             }
         }
-
-        pub fn counting(state_deadline: Timestamp) -> DisputeRound {
-            DisputeRound {
-                state: RoundState::CountingTheVotes,
-                number_of_juries: DisputeRound::INITIAL_NUMBER_OF_JURIES,
-                state_deadline,
-            }
-        }
     }
 }
 
@@ -266,7 +258,6 @@ mod tests {
 
     use super::*;
     use crate::{
-        dispute::DisputeResult,
         juror::{mock::JuriesMapMock, Juror},
         vote::Vote,
     };
@@ -455,7 +446,7 @@ mod tests {
         for juror_id in dispute.juries() {
             set_caller::<DefaultEnvironment>(juror_id);
             dispute
-                .vote(Vote::create(juror_id, 1))
+                .vote(Vote::create(juror_id, [0u64; 4]), [0u64; 4])
                 .expect("Failed make a vote!");
         }
 
@@ -518,13 +509,13 @@ mod tests {
 
         let voters = dispute.juries();
         dispute
-            .vote(Vote::create(voters[0], 1))
+            .vote(Vote::create(voters[0], [0u64; 4]), [0u64; 4])
             .expect("Failed make a vote!");
         dispute
-            .vote(Vote::create(voters[1], 1))
+            .vote(Vote::create(voters[1], [0u64; 4]), [0u64; 4])
             .expect("Failed make a vote!");
         dispute
-            .vote(Vote::create(voters[2], 1))
+            .vote(Vote::create(voters[2], [0u64; 4]), [0u64; 4])
             .expect("Failed make a vote!");
 
         // Move to counting the votes state.
