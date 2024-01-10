@@ -704,7 +704,7 @@ async fn test_dispute_rounds() -> Result<()> {
         .expect("Failed to find judge!");
     assert_eq!(juries_conn.len(), 3);
     assert_eq!(dispute.juries.len(), 3);
-    assert_eq!(dispute.dispute_round_counter, 0);
+    assert_eq!(dispute.dispute_round_counter, 1);
     assert_eq!(
         dispute.dispute_round.clone().unwrap().state,
         RoundState::PickingJuriesAndJudge()
@@ -764,7 +764,7 @@ async fn test_dispute_rounds() -> Result<()> {
         .await??
         .expect("Unable to get dispute!");
     assert_eq!(dispute.juries.len(), 3);
-    assert_eq!(dispute.dispute_round_counter, 0);
+    assert_eq!(dispute.dispute_round_counter, 1);
     assert_eq!(
         dispute.dispute_round.clone().unwrap().state,
         RoundState::CountingTheVotes()
@@ -818,7 +818,7 @@ async fn test_dispute_rounds() -> Result<()> {
         .expect("Unable to get dispute!");
     assert_eq!(dispute.juries.len(), 3);
     assert_eq!(dispute.dispute_round.clone().unwrap().number_of_juries, 5);
-    assert_eq!(dispute.dispute_round_counter, 1);
+    assert_eq!(dispute.dispute_round_counter, 2);
     assert_eq!(dispute.state, DisputeState::Running());
     assert!(dispute.dispute_result.is_none());
     assert!(dispute.judge.is_some());

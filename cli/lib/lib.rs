@@ -21,6 +21,8 @@ use liminal_ark_relations::{
 
 pub mod helpers;
 
+pub const MAJORITY_OF_VOTES: f32 = 0.70; // 70%
+
 pub struct PublicVote {
     pub id: AccountId,
     pub pub_key: Vec<u8>,
@@ -102,13 +104,13 @@ pub fn prepare_counting_inputs(
         }
     }
 
-    let votes_minimum: u8 = (0.75 * votes.len() as f32).ceil() as u8;
+    let votes_minimum: u8 = (MAJORITY_OF_VOTES * votes.len() as f32).ceil() as u8;
     let votes_maximum: u8 = votes.len() as u8 - votes_minimum;
     let verdict = if sum_votes >= votes_minimum {
         jurors_banned = jurors_banned
             .iter()
             .enumerate()
-            .filter(|&(index, _)| decoded_votes[index] != 0)
+            .filter(|&(index, _)| decoded_votes[index] == 0)
             .map(|(_, &ref value)| value.clone())
             .collect();
         VerdictRelation::Positive
@@ -116,7 +118,7 @@ pub fn prepare_counting_inputs(
         jurors_banned = jurors_banned
             .iter()
             .enumerate()
-            .filter(|&(index, _)| decoded_votes[index] == 0)
+            .filter(|&(index, _)| decoded_votes[index] == 1)
             .map(|(_, &ref value)| value.clone())
             .collect();
         VerdictRelation::Negative

@@ -366,19 +366,4 @@ impl BrightDisputes {
 
         Ok(())
     }
-
-    /// Calls 'distribute_deposit' of the contract.
-    pub async fn distribute_deposit(
-        &self,
-        connection: &SignedConnection,
-        dispute_id: u32,
-    ) -> Result<()> {
-        let ink_contract: Instance = (&self.contract).into();
-
-        connection
-            .exec(ink_contract.distribute_deposit(dispute_id))
-            .await?;
-
-        Ok(())
-    }
 }

@@ -4,8 +4,8 @@ use scale::Encode as _;
 
 #[allow(dead_code)]
 pub const CODE_HASH: [u8; 32] = [
-    134, 34, 57, 191, 103, 29, 44, 56, 12, 231, 88, 242, 64, 144, 53, 34, 131, 56, 170, 238, 192,
-    142, 229, 240, 82, 204, 67, 181, 250, 239, 22, 82,
+    172, 163, 202, 102, 55, 35, 203, 88, 236, 195, 156, 213, 90, 245, 231, 194, 112, 179, 169, 197,
+    90, 183, 142, 26, 36, 52, 220, 49, 44, 93, 167, 79,
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, scale::Encode, scale::Decode)]
@@ -225,7 +225,7 @@ impl Instance {
         ink_wrapper_types::ReadCall::new(self.account_id, data)
     }
 
-    ///  Get single dispute by id
+    ///  Remove single dispute by id
     #[allow(dead_code, clippy::too_many_arguments)]
     pub fn remove_dispute(&self, dispute_id: u32) -> ink_wrapper_types::ExecCall {
         let data = {
@@ -399,17 +399,6 @@ impl Instance {
     pub fn process_dispute_round(&self, dispute_id: u32) -> ink_wrapper_types::ExecCall {
         let data = {
             let mut data = vec![14, 13, 134, 23];
-            dispute_id.encode_to(&mut data);
-            data
-        };
-        ink_wrapper_types::ExecCall::new(self.account_id, data)
-    }
-
-    ///  Judge can confirm his participation in dispute
-    #[allow(dead_code, clippy::too_many_arguments)]
-    pub fn distribute_deposit(&self, dispute_id: u32) -> ink_wrapper_types::ExecCall {
-        let data = {
-            let mut data = vec![117, 233, 246, 239];
             dispute_id.encode_to(&mut data);
             data
         };

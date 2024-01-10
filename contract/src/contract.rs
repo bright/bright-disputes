@@ -145,7 +145,7 @@ pub mod bright_disputes {
             self.juries_pool.clone()
         }
 
-        /// Get single dispute by id
+        /// Remove single dispute by id
         #[ink(message)]
         pub fn remove_dispute(&mut self, dispute_id: DisputeId) -> Result<()> {
             let dispute = self.get_dispute_or_assert(dispute_id)?;
@@ -379,10 +379,12 @@ pub mod bright_disputes {
             // End the dispute
             match verdict {
                 Verdict::Positive => {
-                    dispute.end_dispute(DisputeResult::Owner, jurors_banned)?;
+                    dispute.end_dispute(Some(DisputeResult::Owner), jurors_banned)?;
+                    self.distribute_deposit(&mut dispute)?;
                 }
                 Verdict::Negative => {
-                    dispute.end_dispute(DisputeResult::Defendant, jurors_banned)?;
+                    dispute.end_dispute(Some(DisputeResult::Defendant), jurors_banned)?;
+                    self.distribute_deposit(&mut dispute)?;
                 }
                 Verdict::None => {
                     // Check if juries votes
@@ -394,9 +396,12 @@ pub mod bright_disputes {
                     }
 
                     // Dispute round ended, but the majority of votes is not reached.
-                    let timestamp = self.env().block_timestamp();
-                    if let Err(_) = dispute.next_dispute_round(timestamp) {
-                        return Err(BrightDisputesError::MajorityOfVotesNotReached);
+                    match dispute.next_dispute_round(self.env().block_timestamp()) {
+                        Err(BrightDisputesError::DisputeRoundLimitReached) => {
+                            dispute.end_dispute(None, jurors_banned)?;
+                            self.distribute_deposit(&mut dispute)?;
+                        }
+                        _ => (),
                     }
                 }
             };
@@ -418,6 +423,7 @@ pub mod bright_disputes {
                             let judge = self.get_juror_or_assert(judge_id)?;
                             if judge.is_requested_for_action(dispute_id) {
                                 dispute.move_to_banned(judge_id)?;
+                            } else {
                                 self.add_to_juries_pool(judge_id)?;
                             }
                         }
@@ -427,6 +433,7 @@ pub mod bright_disputes {
                             let juror = self.get_juror_or_assert(juror_id)?;
                             if juror.is_requested_for_action(dispute_id) {
                                 dispute.move_to_banned(juror_id)?;
+                            } else {
                                 self.add_to_juries_pool(juror_id)?;
                             }
                         }
@@ -442,49 +449,6 @@ pub mod bright_disputes {
                 }
             }
             self.update_dispute(dispute);
-            Ok(())
-        }
-
-        /// Judge can confirm his participation in dispute
-        #[ink(message)]
-        pub fn distribute_deposit(&mut self, dispute_id: DisputeId) -> Result<()> {
-            let mut dispute = self.get_dispute_or_assert(dispute_id)?;
-
-            // Check if dispute has ended.
-            dispute.assert_dispute_ended()?;
-
-            // Close dispute
-            dispute.close_dispute()?;
-            self.update_dispute(dispute.clone());
-
-            let mut accounts: Vec<AccountId> = Vec::new();
-
-            // Add owner
-            accounts.push(dispute.owner());
-
-            // Add defendant, only if he confirmed dispute
-            if dispute.has_defendant_confirmed_dispute() {
-                accounts.push(dispute.defendant());
-            }
-
-            // Add judge
-            if let Some(judge_id) = dispute.judge() {
-                accounts.push(judge_id);
-                self.add_to_juries_pool(judge_id)?;
-            }
-
-            // Add juries, who were not banned.
-            for juror_id in dispute.juries() {
-                accounts.push(juror_id);
-                self.add_to_juries_pool(juror_id)?;
-            }
-
-            // Split deposit and transfer founds.
-            let founds = dispute.deposit() / accounts.len() as Balance;
-            for account in accounts {
-                self.env().transfer(account, founds)?;
-            }
-
             Ok(())
         }
 
@@ -554,10 +518,8 @@ pub mod bright_disputes {
 
         fn add_to_juries_pool(&mut self, juror_id: AccountId) -> Result<()> {
             self.assert_juror_not_in_pool(juror_id)?;
-            let juror = self
-                .juries
-                .get(juror_id)
-                .unwrap_or_else(|| Juror::create(juror_id));
+
+            let juror = Juror::create(juror_id);
             self.juries_pool.push(juror.id());
             self.update_juror(juror);
             Ok(())
@@ -588,6 +550,49 @@ pub mod bright_disputes {
                 juries.push(filtered_pool[index]);
             }
             Ok(juries)
+        }
+
+        /// Finish the dispute and distribute the deposit.
+        fn distribute_deposit(&mut self, dispute: &mut Dispute) -> Result<()> {
+            // Check if dispute has ended.
+            dispute.assert_dispute_ended()?;
+
+            // Close dispute
+            dispute.close_dispute()?;
+
+            let mut accounts: Vec<AccountId> = Vec::new();
+
+            // Add judge
+            if let Some(judge_id) = dispute.judge() {
+                accounts.push(judge_id.clone());
+                self.add_to_juries_pool(judge_id)?;
+            }
+
+            // Add juries, who were not banned.
+            for juror_id in dispute.juries() {
+                accounts.push(juror_id.clone());
+                self.add_to_juries_pool(juror_id)?;
+            }
+
+            // If the dispute reaches the maximum number of rounds,
+            // and the majority of votes isn't reached, return the
+            // deposit to the Owner and Defendant as well.
+            if dispute.get_dispute_result().is_none() {
+                // Add owner
+                accounts.push(dispute.owner());
+
+                // Add defendant, only if he confirmed dispute
+                if dispute.has_defendant_confirmed_dispute() {
+                    accounts.push(dispute.defendant());
+                }
+            }
+
+            // Split deposit and transfer founds.
+            let founds = dispute.deposit() / accounts.len() as Balance;
+            for account in accounts {
+                self.env().transfer(account, founds)?;
+            }
+            Ok(())
         }
 
         fn serialize<T: CanonicalSerialize + ?Sized>(t: &T) -> Vec<u8> {
@@ -814,6 +819,9 @@ pub mod bright_disputes {
             let result = bright_disputes.remove_dispute(1);
             assert_eq!(result, Ok(()));
 
+            let result = bright_disputes.remove_dispute(1);
+            assert_eq!(result, Err(BrightDisputesError::DisputeNotExist));
+
             // Failed to remove dispute in "Running" state.
             let mut bright_disputes = create_test_bright_dispute_with_running_dispute();
             let result = bright_disputes.remove_dispute(1);
@@ -824,7 +832,7 @@ pub mod bright_disputes {
                 .get_dispute(1)
                 .expect("Failed to get dispute!");
             dispute
-                .end_dispute(DisputeResult::Owner, vec![])
+                .end_dispute(Some(DisputeResult::Owner), vec![])
                 .expect("Failed to end dispute!");
             bright_disputes.update_dispute(dispute.clone());
             let result = bright_disputes.remove_dispute(1);
@@ -1374,108 +1382,6 @@ pub mod bright_disputes {
             set_caller::<DefaultEnvironment>(accounts.alice);
             let result = bright_disputes.process_dispute_round(dispute_id);
             assert_eq!(result, Err(BrightDisputesError::JuriesPoolIsToSmall));
-        }
-
-        // Check deposit distribution
-        #[ink::test]
-        fn distribute_deposit() {
-            mock::register_chain_extensions(());
-
-            let accounts = ink::env::test::default_accounts::<DefaultEnvironment>();
-            set_caller::<DefaultEnvironment>(accounts.alice);
-
-            let mut bright_disputes = create_test_bright_dispute_with_running_dispute();
-            let dispute_id = 1;
-
-            // Register charlie, eve, frank  and django as a juries.
-            register_valid_juries(&mut bright_disputes);
-
-            // Switch to "PickingJuriesAndJudge" state.
-            set_caller::<DefaultEnvironment>(accounts.alice);
-            bright_disputes
-                .process_dispute_round(dispute_id)
-                .expect("Failed to create a dispute!");
-
-            let dispute = bright_disputes
-                .get_dispute(dispute_id)
-                .expect("Failed to get dispute!");
-
-            // Assign all juries
-            let assigned_juries = dispute.juries();
-
-            let mut juror_not_assigned = vec![
-                accounts.charlie,
-                accounts.eve,
-                accounts.frank,
-                accounts.django,
-            ];
-            juror_not_assigned.retain(|id| !assigned_juries.contains(id));
-
-            // Confirm juror participation
-            set_caller::<DefaultEnvironment>(assigned_juries[0]);
-            bright_disputes
-                .confirm_juror_participation_in_dispute(dispute_id, vec![])
-                .expect("Failed confirm juries participation!");
-
-            set_caller::<DefaultEnvironment>(assigned_juries[1]);
-            bright_disputes
-                .confirm_juror_participation_in_dispute(dispute_id, vec![])
-                .expect("Failed confirm juries participation!");
-
-            set_caller::<DefaultEnvironment>(assigned_juries[2]);
-            bright_disputes
-                .confirm_juror_participation_in_dispute(dispute_id, vec![])
-                .expect("Failed confirm juries participation!");
-
-            // Assign judge
-            set_caller::<DefaultEnvironment>(juror_not_assigned[0]);
-            bright_disputes
-                .confirm_judge_participation_in_dispute(dispute_id, vec![])
-                .expect("Failed to confirm judge participation!");
-
-            // Switch state to "Voting" state
-            set_caller::<DefaultEnvironment>(accounts.alice);
-            bright_disputes
-                .process_dispute_round(dispute_id)
-                .expect("Failed process dispute round!");
-
-            // Juries voting
-            set_caller::<DefaultEnvironment>(assigned_juries[0]);
-            bright_disputes
-                .vote(dispute_id, [0u64; 4], [0u64; 4], vec![])
-                .expect("Failed to vote");
-            set_caller::<DefaultEnvironment>(assigned_juries[1]);
-            bright_disputes
-                .vote(dispute_id, [0u64; 4], [0u64; 4], vec![])
-                .expect("Failed to vote");
-            set_caller::<DefaultEnvironment>(assigned_juries[2]);
-            bright_disputes
-                .vote(dispute_id, [0u64; 4], [0u64; 4], vec![])
-                .expect("Failed to vote");
-
-            // Switch state to CountingTheVotes
-            set_caller::<DefaultEnvironment>(accounts.alice);
-            bright_disputes
-                .process_dispute_round(dispute_id)
-                .expect("Failed process dispute round!");
-
-            // Count the votes, dispute ends
-            set_caller::<DefaultEnvironment>(juror_not_assigned[0]);
-            bright_disputes
-                .issue_the_verdict(
-                    dispute_id,
-                    0,
-                    0,
-                    Verdict::Positive,
-                    [0u64; 4],
-                    vec![],
-                    vec![],
-                )
-                .expect("Failed process dispute round!");
-
-            set_caller::<DefaultEnvironment>(accounts.bob);
-            let result = bright_disputes.distribute_deposit(dispute_id);
-            assert_eq!(result, Ok(()));
         }
     }
 }

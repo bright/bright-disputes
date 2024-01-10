@@ -33,15 +33,6 @@ pub enum DisputeResult {
     Defendant,
 }
 
-impl DisputeResult {
-    pub fn opposite(&self) -> DisputeResult {
-        if *self == DisputeResult::Owner {
-            return DisputeResult::Defendant;
-        }
-        return DisputeResult::Owner;
-    }
-}
-
 #[derive(Clone, Debug, PartialEq, scale::Decode, scale::Encode)]
 #[cfg_attr(
     feature = "std",
@@ -69,7 +60,7 @@ pub struct Dispute {
 }
 
 impl Dispute {
-    const MAX_DISPUTE_ROUNDS: u8 = 3u8;
+    const MAX_DISPUTE_ROUNDS: u8 = 4u8;
     const INCREMENT_JURIES_BY: u8 = 2;
 
     /// Creates a new dispute
@@ -90,7 +81,7 @@ impl Dispute {
             defendant_link: None,
             dispute_result: None,
             dispute_round: None,
-            dispute_round_counter: 0u8,
+            dispute_round_counter: 1u8,
             judge: None,
             juries: Vec::new(),
             banned: Vec::new(),
@@ -190,7 +181,7 @@ impl Dispute {
     /// End the dispute and publish result.
     pub fn end_dispute(
         &mut self,
-        result: DisputeResult,
+        result: Option<DisputeResult>,
         juries_to_ban: Vec<AccountId>,
     ) -> Result<()> {
         self.assert_state(DisputeState::Running)?;
@@ -199,7 +190,7 @@ impl Dispute {
         }
 
         self.state = DisputeState::Ended;
-        self.dispute_result = Some(result.clone());
+        self.dispute_result = result;
         self.dispute_round = None;
 
         // Move juries who wrongly voted to banned list
@@ -492,7 +483,7 @@ mod tests {
         assert_eq!(dispute.defendant, accounts.bob);
         assert_eq!(dispute.defendant_link, None);
         assert_eq!(dispute.dispute_result, None);
-        assert_eq!(dispute.dispute_round_counter, 0u8);
+        assert_eq!(dispute.dispute_round_counter, 1u8);
         assert_eq!(dispute.judge, None);
         assert_eq!(dispute.juries.len(), 0);
         assert_eq!(dispute.banned.len(), 0);
@@ -816,7 +807,7 @@ mod tests {
     fn next_dispute_round_limit() {
         let mut dispute = default_test_running_dispute();
 
-        for _ in 0..Dispute::MAX_DISPUTE_ROUNDS {
+        for _ in 1..Dispute::MAX_DISPUTE_ROUNDS {
             let result = dispute.next_dispute_round(0u64);
             assert_eq!(result, Ok(()));
         }
@@ -873,7 +864,7 @@ mod tests {
         set_caller::<DefaultEnvironment>(accounts.alice);
 
         let mut dispute = Dispute::create(1, "".into(), accounts.bob, 15);
-        let result = dispute.end_dispute(DisputeResult::Owner, vec![]);
+        let result = dispute.end_dispute(Some(DisputeResult::Owner), vec![]);
         assert_eq!(result, Err(BrightDisputesError::InvalidDisputeState));
 
         // Force "Voting" state
@@ -898,7 +889,7 @@ mod tests {
             .vote(Vote::create(accounts.eve, [0u64; 4]), [0u64; 4])
             .expect("Failed to vote!");
 
-        let result = dispute.end_dispute(DisputeResult::Owner, vec![accounts.eve]);
+        let result = dispute.end_dispute(Some(DisputeResult::Owner), vec![accounts.eve]);
         assert_eq!(result, Ok(()));
 
         assert_eq!(dispute.banned().len(), 1);
@@ -944,7 +935,7 @@ mod tests {
         let result = dispute.assert_dispute_ended();
         assert_eq!(result, Ok(()));
 
-        dispute.dispute_round_counter = 0u8;
+        dispute.dispute_round_counter = 1u8;
         dispute.state = DisputeState::Ended;
         let result = dispute.assert_dispute_ended();
         assert_eq!(result, Ok(()));

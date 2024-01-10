@@ -99,9 +99,4 @@ pub enum ContractCmd {
         caller_account: String,
         dispute_id: u32,
     },
-    /// Distribute dispute deposit
-    DistributeDeposit {
-        caller_account: String,
-        dispute_id: u32,
-    },
 }

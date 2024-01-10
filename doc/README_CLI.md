@@ -118,8 +118,6 @@ which moves us to the next phase which is `Counting the Votes`. Now the role of 
 ```
 ../cli/target/release/bright_disputes_cli count-the-votes //Juror4 1 25,164,133,151,251,54,205,192,212,173,218,155,210,238,98,4,36,68,162,114,94,30,134,181,187,167,219,131,227,25,202,6
 ```
-finally we can finish the dispute and distribute the deposit:
-```
-../cli/target/release/bright_disputes_cli distribute-deposit //Owner 1
-```
+Once the judgment is issued, the dispute will automatically end and all funds will be distributed accordingly.
+
 

@@ -26,7 +26,7 @@ use crate::{
         Command, Config,
         ContractCmd::{
             ConfirmDefendant, ConfirmJudgeParticipation, ConfirmJurorParticipation, CountTheVotes,
-            CreateDispute, DistributeDeposit, GetDispute, GetDisputeFull, ProcessDisputeRound,
+            CreateDispute, GetDispute, GetDisputeFull, ProcessDisputeRound,
             RegisterAsAnActiveJuror, UnregisterAsAnActiveJuror, UpdateDefendantDescription,
             UpdateOwnerDescription, Vote,
         },
@@ -283,18 +283,6 @@ async fn handle_contract_command(
                 "Successfully switched to the next dispute state: {:?}",
                 dispute_state
             );
-        }
-        DistributeDeposit {
-            caller_account,
-            dispute_id,
-        } => {
-            let account = keypair_from_string(&caller_account);
-            let signed_connection = SignedConnection::from_connection(connection, account.clone());
-
-            bright_dispute
-                .distribute_deposit(&signed_connection, dispute_id)
-                .await?;
-            info!("Deposit distributed successfully!");
         }
     }
     Ok(())

@@ -4,8 +4,8 @@ use scale::Encode as _;
 
 #[allow(dead_code)]
 pub const CODE_HASH: [u8; 32] = [
-    134, 34, 57, 191, 103, 29, 44, 56, 12, 231, 88, 242, 64, 144, 53, 34, 131, 56, 170, 238, 192,
-    142, 229, 240, 82, 204, 67, 181, 250, 239, 22, 82,
+    30, 161, 18, 63, 166, 82, 11, 106, 86, 19, 164, 51, 127, 97, 138, 215, 222, 180, 237, 3, 161,
+    251, 174, 200, 203, 108, 93, 249, 37, 173, 226, 99,
 ];
 
 #[derive(Debug, Clone, PartialEq, Eq, scale::Encode, scale::Decode)]
@@ -170,6 +170,12 @@ impl From<Instance> for ink_primitives::AccountId {
 
 impl ink_wrapper_types::EventSource for Instance {
     type Event = event::Event;
+}
+
+#[allow(dead_code)]
+pub fn upload() -> ink_wrapper_types::UploadCall {
+    let wasm = include_bytes!("../contract/target/ink/bright_disputes.wasm");
+    ink_wrapper_types::UploadCall::new(wasm.to_vec(), CODE_HASH)
 }
 
 impl Instance {
@@ -399,17 +405,6 @@ impl Instance {
     pub fn process_dispute_round(&self, dispute_id: u32) -> ink_wrapper_types::ExecCall {
         let data = {
             let mut data = vec![14, 13, 134, 23];
-            dispute_id.encode_to(&mut data);
-            data
-        };
-        ink_wrapper_types::ExecCall::new(self.account_id, data)
-    }
-
-    ///  Judge can confirm his participation in dispute
-    #[allow(dead_code, clippy::too_many_arguments)]
-    pub fn distribute_deposit(&self, dispute_id: u32) -> ink_wrapper_types::ExecCall {
-        let data = {
-            let mut data = vec![117, 233, 246, 239];
             dispute_id.encode_to(&mut data);
             data
         };
