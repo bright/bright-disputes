@@ -16,9 +16,13 @@ When the `deploy.sh` script succeed our smart contract will be deployed on the a
 ```
 or we can find it in the file `scripts/addresses.json`.
 
-Cli allows us to set smart contract address by calling:
+CLI allows us to set smart contract address by calling:
 ```
-../cli/target/release/bright_disputes_cli set-contract 5F3bNYZMgeDvqVCnS4sMdWavuyWDwht6yuK8sL2gxc3PP2xg
+../cli/target/release/bright_disputes_cli set-contract 5D9yNgyQMjJ98K3mW3BKY5Rt57eWxyFBwD8jTtCviWTGeyWj
+```
+Please note, if you are not on the linux platform you can use `cli.sh` script to run commands as follow: 
+```
+bash ../scripts/cli.sh "cli/target/release/bright_disputes_cli set-contract 5D9yNgyQMjJ98K3mW3BKY5Rt57eWxyFBwD8jTtCviWTGeyWj"
 ```
 
 We will start from creating a new dispute, and we are going to use accounts from our script:

@@ -5,12 +5,14 @@ This project is a dApp for raising and solving the disputes on the Substrate-bas
 1. `cargo-contract 3.0.1`
 2. `ink-wrapper 0.5.0`
 3. `rustc-1.69`
+4. `jq`
 
-## Build (manually)
-Before building a smart contract we need to download submodules:
+Before running anything, please update submodules.
 ```
 git submodule update --init --recursive
 ```
+## Build (manually)
+Bright Disputes is actually a smart contract and a CLI, which allows to execute commands on the Substrate node. In this section we will present how to manually build them.
 
 ### Building smart contract
 To build a smart contract locally we can run:
@@ -31,7 +33,7 @@ Follow the instructions from the [README](https://github.com/bright/bright-dispu
 ## Build (docker)
 Smart contract can be build with the Docker:
 ```
-DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile --output artifacts .
+DOCKER_BUILDKIT=1 docker build -f docker/Dockerfile --output artifacts . 
 ```
 This will export *bright_disputes.json*, *bright_disputes.wasm*, *bright_disputes.contract*, to the *artifacts* directory.
 
