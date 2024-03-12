@@ -12,3 +12,5 @@ target/
 .DS_Store
 scripts/docker/
 scripts/addresses.json
+
+.idea/
