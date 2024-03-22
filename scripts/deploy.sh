@@ -221,6 +221,16 @@ generate_ink_types() {
     log_progress "✅ Ink types were generated"
 }
 
+ui_setup() {
+    cd "${SCRIPT_DIR}"/..
+
+    (for v in "OWNER" "OWNER_PUBKEY" "DEFENDANT" "DEFENDANT_PUBKEY" "JUROR_1" "JUROR_1_PUBKEY" "JUROR_2" "JUROR_2_PUBKEY" "JUROR_3" "JUROR_3_PUBKEY" "JUROR_4" "JUROR_4_PUBKEY" "JUROR_5" "JUROR_5_PUBKEY" "JUROR_6" "JUROR_6_PUBKEY" "JUROR_7" "JUROR_7_PUBKEY"; do
+      echo "$v=${!v}"
+    done) > ./ui/.env
+
+    log_progress "✅ .env file for the showcase app generated"
+}
+
 # ------------------------------------------------------------------------------------------------------
 
 deploy() {
@@ -255,6 +265,9 @@ deploy() {
 
     # build cli
     build_cli
+
+    # showcase app setup
+    ui_setup
 
     log_progress "🙌 Deployment successful"
 }

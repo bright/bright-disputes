@@ -50,6 +50,9 @@ bash scripts/deploy.sh
 
 Please note, that this script is based on the [deploy.sh](https://github.com/Cardinal-Cryptography/zk-apps/blob/main/shielder/deploy/deploy.sh) created by the Cardinal-Cryptography.
 
+## Running UI
+To run a UI, please follow the instructions from the [README](./ui/README.md) file in ui folder.
+
 ## Tests
 To run a unit test:
 ```
